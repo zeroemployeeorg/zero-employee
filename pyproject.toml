@@ -30,6 +30,14 @@ packages = ["src/zero_employee"]
 "src/zero_employee/hooks_templates/cc-stop.sh" = "zero_employee/hooks_templates/cc-stop.sh"
 "src/zero_employee/hooks_templates/cc-pretooluse-git.sh" = "zero_employee/hooks_templates/cc-pretooluse-git.sh"
 "src/zero_employee/hooks_templates/install.sh" = "zero_employee/hooks_templates/install.sh"
+"src/zero_employee/scaffold_templates/claude-md/CLAUDE.md" = "zero_employee/scaffold_templates/claude-md/CLAUDE.md"
+"src/zero_employee/scaffold_templates/CLAUDE.md" = "zero_employee/scaffold_templates/CLAUDE.md"
+"src/zero_employee/scaffold_templates/project-CLAUDE.md" = "zero_employee/scaffold_templates/project-CLAUDE.md"
+"src/zero_employee/scaffold_templates/.cursor/rules/000-governance.mdc" = "zero_employee/scaffold_templates/.cursor/rules/000-governance.mdc"
+"src/zero_employee/scaffold_templates/.claude/settings.json" = "zero_employee/scaffold_templates/.claude/settings.json"
+"src/zero_employee/scaffold_templates/agents/zeo-architect.md" = "zero_employee/scaffold_templates/agents/zeo-architect.md"
+"src/zero_employee/scaffold_templates/agents/zeo-claimant.md" = "zero_employee/scaffold_templates/agents/zeo-claimant.md"
+"src/zero_employee/scaffold_templates/agents/zeo-verifier.md" = "zero_employee/scaffold_templates/agents/zeo-verifier.md"
 
 [dependency-groups]
 dev = ["pytest>=8.0"]

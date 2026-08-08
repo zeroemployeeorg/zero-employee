@@ -44,6 +44,13 @@ from .cost import (
     usd_for_input_tokens,
 )
 from .hooks import hooks_install
+from .scaffold import (
+    init_corpus,
+    install_bridges,
+    parse_tool_flags,
+    read_doctrine,
+    scaffold_project_stream,
+)
 from .core import (
     lint_file,
     iter_sow_files,
@@ -735,7 +742,8 @@ def _digest(root, since) -> int:
     return 0
 
 
-_USAGE = """sow-lint - the example-org governance linter
+_USAGE = """zeo (zero-employee) - portable SOW governance tooling
+  Alias: sow-lint (retained forever for corpus check: fields).
 
 USAGE
   sow-lint <file-or-dir>          Lint a SOW / ruling / boot doc (grades it against canonical).
@@ -749,6 +757,15 @@ USAGE
                                   Skips locally authored files. Never commits or pushes.
   sow-lint hooks install [path]   Write tools/hooks templates that call sow-lint; install
                                   .git/hooks/pre-commit. Stop uses --session-cost (no rates).
+  zeo init [path] [--cursor|--gemini|--claude|--agents|--all]
+                                  Scaffold a corpus: claude-md/CLAUDE.md marker + root
+                                  CLAUDE.md (@import). Tool bridges are opt-in.
+  zeo scaffold <project> <stream> [n] [title] [--cursor|--gemini|--claude|--agents|--all]
+                                  Create projects/<project>/CLAUDE.md + Rev-17 SOW under
+                                  sow/<stream>/. Bridges opt-in (under the project dir).
+  zeo bridges [path] --cursor|--gemini|--claude|--agents|--all
+                                  Install/refresh selected IDE/agent bridges only.
+                                  Distinct from --resync-* (doctrine SHA sync).
   sow-lint --inbox <stream> [path]
                                   Show ONE stream's open questions + rulings that answered it.
                                   Path optional - run it from anywhere: sow-lint --inbox example-stream
@@ -816,6 +833,12 @@ OPTIONS
                      Re-derive inherited doctrine from upstream (writes files; no commit).
   hooks install [path]
                      Install tools/hooks templates + .git/hooks/pre-commit into a corpus.
+  init [path] [--cursor|--gemini|--claude|--agents|--all]
+                     Scaffold corpus marker + CLAUDE.md entrypoint; bridges opt-in.
+  scaffold <project> <stream> [n] [title] [--cursor|--gemini|--claude|--agents|--all]
+                     Scaffold a project workstream SOW (Rev 17); bridges opt-in.
+  bridges [path] --cursor|--gemini|--claude|--agents|--all
+                     Install selected IDE/agent bridges (not doctrine --resync-*).
   --kosten [stream]   Corpus artifact token ESTIMATE + DERIVED USD (fixed tax, SOWs,
                      rulings, waste). Session tokens are NOT here — use --session-cost.
   --repo-cost [path] Ahead-of-work: estimate tokens in a repo/tree and DERIVE USD at
@@ -838,6 +861,83 @@ OPTIONS
 
 The sows repo is auto-discovered by walking up to a claude-md/CLAUDE.md marker,
 so --board and --inbox need NO path when you're in or near the repo."""
+
+
+def _cmd_init(argv: list[str]) -> int:
+    tools = parse_tool_flags(argv)
+    positionals = [a for a in argv if not str(a).startswith("-")]
+    target = pathlib.Path(positionals[0]).resolve() if positionals else pathlib.Path(".").resolve()
+    info = init_corpus(target, tools=tools)
+    print(f"INIT: corpus at {info['root']}")
+    for c in info["created"]:
+        print(f"  + {c}")
+    if not info["created"]:
+        print("  (marker/entrypoint already present)")
+    b = info["bridges"]
+    if b.get("tools"):
+        print(f"  bridges: {', '.join(b['tools'])}")
+        for act in b.get("actions", []):
+            print(f"    {act['action']}: {act['path']}")
+    else:
+        print("  bridges: (none — pass --cursor/--gemini/--claude/--agents/--all)")
+    return 0
+
+
+def _cmd_scaffold(argv: list[str]) -> int:
+    tools = parse_tool_flags(argv)
+    positionals = [a for a in argv if not str(a).startswith("-")]
+    if len(positionals) < 2:
+        print(
+            "Usage: zeo scaffold <project> <stream> [n] [title] "
+            "[--cursor] [--gemini] [--claude] [--agents] [--all]",
+            file=sys.stderr,
+        )
+        return 2
+    project, stream = positionals[0], positionals[1]
+    sow_num = 1
+    title = "Initial Workstream SOW"
+    rest = positionals[2:]
+    if rest and rest[0].isdigit():
+        sow_num = int(rest[0])
+        rest = rest[1:]
+    if rest:
+        title = " ".join(rest)
+    root = _discover_root(None) or pathlib.Path(".").resolve()
+    # Prefer cwd if it already has the marker (scaffold into current corpus).
+    cwd = pathlib.Path(".").resolve()
+    if (cwd / "claude-md" / "CLAUDE.md").is_file():
+        root = cwd
+    try:
+        info = scaffold_project_stream(
+            root, project, stream, sow_num=sow_num, title=title, tools=tools
+        )
+    except FileNotFoundError as e:
+        print(f"scaffold: {e}", file=sys.stderr)
+        return 2
+    tool_str = f" with tools: {', '.join(info['bridges']['tools'])}" if info["bridges"].get("tools") else " (core only)"
+    print(f"SCAFFOLD: {info.get('sow')}{tool_str}")
+    for c in info["created"]:
+        print(f"  + {c}")
+    for act in info["bridges"].get("actions", []):
+        print(f"  {act['action']}: {act['path']}")
+    return 0
+
+
+def _cmd_bridges(argv: list[str]) -> int:
+    tools = parse_tool_flags(argv)
+    if not tools:
+        print(
+            "Usage: zeo bridges [path] --cursor|--gemini|--claude|--agents|--all",
+            file=sys.stderr,
+        )
+        return 2
+    positionals = [a for a in argv if not str(a).startswith("-")]
+    target = pathlib.Path(positionals[0]).resolve() if positionals else pathlib.Path(".").resolve()
+    info = install_bridges(target, tools=tools)
+    print(f"BRIDGES: {', '.join(info['tools'])} at {info['root']}")
+    for act in info.get("actions", []):
+        print(f"  {act['action']}: {act['path']}")
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -865,6 +965,12 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print("  git pre-commit: skipped (no .git dir)")
         return 0
+    if args and args[0] == "init":
+        return _cmd_init(args[1:])
+    if args and args[0] == "scaffold":
+        return _cmd_scaffold(args[1:])
+    if args and args[0] == "bridges":
+        return _cmd_bridges(args[1:])
     backfill_project = None
     locate_stream_name = None
     want_progress = None
@@ -1725,7 +1831,7 @@ def main(argv: list[str] | None = None) -> int:
     canon = pathlib.Path(claude_md_override) if claude_md_override else find_canonical_claude_md(root)
     current_rev = None
     if canon and canon.is_file():
-        current_rev = parse_current_rev(canon.read_text(encoding="utf-8", errors="replace"))
+        current_rev = parse_current_rev(read_doctrine(canon))
 
     rev_note = f"canonical Rev {current_rev}" if current_rev is not None else "canonical Rev UNKNOWN"
     print(f"=== sow-lint {_version()} · {rev_note} ===")

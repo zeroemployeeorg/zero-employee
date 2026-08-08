@@ -3705,12 +3705,10 @@ def check_resolved_by(fm, root, ruling_stems=None):
         )
     if kind == "rev":
         # N <= current canonical Rev
+        from .scaffold import read_doctrine as _read_doctrine
+
         canon = find_canonical_claude_md(root)
-        cur = (
-            parse_current_rev(canon.read_text(encoding="utf-8", errors="replace"))
-            if canon and canon.is_file()
-            else None
-        )
+        cur = parse_current_rev(_read_doctrine(canon)) if canon and canon.is_file() else None
         try:
             ok = cur is not None and int(target) <= int(cur)
         except ValueError:
