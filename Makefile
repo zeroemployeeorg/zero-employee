@@ -80,7 +80,7 @@ check-env: ## Verify virtual environment is active and zero_employee is importab
 	@echo "${BLUE}Checking environment...${RESET}"
 	@if [ ! -f "$(PYTHON)" ]; then echo "${RED}Virtual environment not found at $(PYTHON). Run 'make setup'.${RESET}"; exit 1; fi
 	@$(PYTHON) --version
-	@20 20 12 61 79 80 81 701 702 33 98 100 204 250 395 398 399 400PYTHON) -c "import zero_employee; print(f'OK: zero_employee at {zero_employee.__file__}')" || (echo "${RED}Import failed — run 'make setup'${RESET}" && exit 1)
+	@$(PYTHON) -c "import zero_employee; print(f'OK: zero_employee at {zero_employee.__file__}')" || (echo "${RED}Import failed — run 'make setup'${RESET}" && exit 1)
 	@echo "${GREEN}✓ Environment check passed${RESET}"
 
 .PHONY: verify

@@ -32,15 +32,20 @@ If no corpus is found, `zeo --board` exits non-zero with a clear message — it 
 
 | Command | Purpose |
 | --- | --- |
+| `zeo init [path]` | Scaffold corpus marker + `CLAUDE.md` (`@import`); bridges opt-in |
+| `zeo scaffold <project> <stream>` | Create project CLAUDE.md + Rev-17 SOW |
+| `zeo bridges --cursor\|--gemini\|--claude\|--agents\|--all` | Install IDE/agent bridges only |
 | `zeo --board` | Regenerate the fleet board (`STATE.md`) |
 | `zeo --triage` | Operator worklist |
 | `zeo --digest` | Session digest |
 | `zeo --repo-cost` / `--session-cost` | Token×USD cost proxies |
-| `zeo --resync-check` / `--resync-apply` | Inherited doctrine sync |
+| `zeo --resync-check` / `--resync-apply` | Inherited doctrine sync (not bridges) |
 | `zeo hooks install` | Install corpus hook templates |
 | `zeo <path>` | Lint a SOW / ruling / skill file |
 
 `sow-lint` accepts the same arguments as `zeo`.
+
+Bridge flags (`--cursor`, `--gemini`, `--claude`, `--agents`, `--all`) are shared by `init`, `scaffold`, and `bridges`. Default scaffolding stays clean (no IDE clutter).
 
 ## Documentation
 

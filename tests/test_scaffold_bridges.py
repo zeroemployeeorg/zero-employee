@@ -22,6 +22,7 @@ def test_bridges_noop_without_tools(tmp_path):
 
 def test_bridges_cursor_only(tmp_path):
     root = tmp_path / "r"
+    root.mkdir()
     (root / "CLAUDE.md").write_text("# x\n", encoding="utf-8")
     info = install_bridges(root, tools=["cursor"])
     assert (root / ".cursor" / "rules" / "000-governance.mdc").is_file()
@@ -33,6 +34,7 @@ def test_bridges_cursor_only(tmp_path):
 
 def test_bridges_gemini_claude_agents(tmp_path):
     root = tmp_path / "r"
+    root.mkdir()
     (root / "CLAUDE.md").write_text("# x\n", encoding="utf-8")
     install_bridges(root, tools=["gemini", "claude", "agents"])
     assert (root / "GEMINI.md").exists()

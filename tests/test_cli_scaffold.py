@@ -61,6 +61,7 @@ def test_cli_bridges_requires_flags(tmp_path, capsys):
 
 def test_cli_bridges_cursor(tmp_path, capsys):
     root = tmp_path / "r"
+    root.mkdir()
     (root / "CLAUDE.md").write_text("#\n", encoding="utf-8")
     rc = cli.main(["bridges", str(root), "--cursor"])
     out = capsys.readouterr().out

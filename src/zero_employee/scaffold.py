@@ -134,7 +134,7 @@ def install_bridges(root: pathlib.Path | str, tools: Iterable[str] | None = None
     if "cursor" in tools_set:
         (root / ".cursor" / "rules").mkdir(parents=True, exist_ok=True)
         mdc = root / ".cursor" / "rules" / "000-governance.mdc"
-        content = _read_template(".cursor", "rules", "000-governance.mdc")
+        content = _read_template("000-governance.mdc")
         # Always refresh the alwaysApply governance bridge (managed template).
         mdc.write_text(content, encoding="utf-8")
         actions.append({"path": str(mdc.relative_to(root)), "action": "WRITTEN"})
@@ -150,7 +150,7 @@ def install_bridges(root: pathlib.Path | str, tools: Iterable[str] | None = None
     if "claude" in tools_set:
         (root / ".claude").mkdir(parents=True, exist_ok=True)
         settings = root / ".claude" / "settings.json"
-        act = _write_if_absent(settings, _read_template(".claude", "settings.json"))
+        act = _write_if_absent(settings, _read_template("claude-settings.json"))
         actions.append({"path": ".claude/settings.json", "action": act})
 
     if "agents" in tools_set:
