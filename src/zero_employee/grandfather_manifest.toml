@@ -1,0 +1,8 @@
+# Public default grandfather manifest — empty areas.
+# Private corpora may supply tools/doctrine/grandfather_manifest.toml (or
+# ZEO_GRANDFATHER_MANIFEST) to override. An empty/default manifest means B2
+# enforcement stays WARN-skip / unarmed until a corpus provides boundary data.
+
+freeze_date = "1970-01-01"
+
+[areas]

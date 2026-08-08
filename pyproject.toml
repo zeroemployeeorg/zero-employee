@@ -1,0 +1,42 @@
+[project]
+name = "zero-employee"
+version = "0.1.0"
+description = "A portable linter for Statement-of-Work (SOW) documents — validates the CLAUDE.md §14 keystone rule."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["pyyaml>=6.0", "pydantic>=2.0", "tiktoken>=0.7"]
+license = { text = "MIT" }
+
+[project.scripts]
+zeo = "zero_employee.cli:main"
+# sow-lint is RETAINED, never deprecated. 227 IMMUTABLE references name it - 64 in landed
+# rulings, 163 in filed SOWs - and their check: fields must stay RUNNABLE (RULING-004,
+# s5 append-dont-revert). Dropping it would make the corpus own verification claims
+# unrunnable in one commit. RULING-093 legacy_name reasoning, applied to a command.
+sow-lint = "zero_employee.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/zero_employee"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/zero_employee/data/model_rates.toml" = "zero_employee/data/model_rates.toml"
+"src/zero_employee/grandfather_manifest.toml" = "zero_employee/grandfather_manifest.toml"
+"src/zero_employee/hooks_templates/pre-commit" = "zero_employee/hooks_templates/pre-commit"
+"src/zero_employee/hooks_templates/cc-session-start.sh" = "zero_employee/hooks_templates/cc-session-start.sh"
+"src/zero_employee/hooks_templates/cc-stop.sh" = "zero_employee/hooks_templates/cc-stop.sh"
+"src/zero_employee/hooks_templates/cc-pretooluse-git.sh" = "zero_employee/hooks_templates/cc-pretooluse-git.sh"
+"src/zero_employee/hooks_templates/install.sh" = "zero_employee/hooks_templates/install.sh"
+
+[dependency-groups]
+dev = ["pytest>=8.0"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+
+[tool.ruff.lint]
+ignore = ["E402", "E741", "F841", "E501"]

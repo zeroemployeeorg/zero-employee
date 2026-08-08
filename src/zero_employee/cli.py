@@ -1,0 +1,1905 @@
+"""Command-line entry point for sow-lint (v0.3 — keystone + identity + governance).
+
+--skill <path> checks the sow-authoring skill's era first (Fold 1, governance-docs-first):
+the currency-enforcer is graded before the corpus it governs.
+"""
+
+from __future__ import annotations
+import sys
+import pathlib
+import datetime
+import subprocess
+import io
+import contextlib
+import socket
+from .core import (
+    promote_plan,
+    resync_check,
+    resync_apply,
+    unwatched_genres,
+    citation_scan,
+    citation_totals,
+    corpus_root,
+    project_backfill_plan,
+    project_backfill_apply,
+    promote_apply,
+    locate_stream,
+    project_repair_plan,
+    extract_frontmatter,
+    stream_progress,
+    soll_ist,
+    restaufwand,
+    kosten,
+    waste_report,
+)
+from .cost import (
+    UnknownModelError,
+    append_session_cost_log,
+    fixed_tax_sample_texts,
+    format_usd,
+    get_model_rates,
+    make_estimator,
+    repo_token_report,
+    session_cost_report,
+    usd_for_input_tokens,
+)
+from .hooks import hooks_install
+from .core import (
+    lint_file,
+    iter_sow_files,
+    migrate_check_render,
+    flat_dark_files,
+    needs_successor,
+    check_corpus,
+    check_ruling_corpus,
+    find_canonical_claude_md,
+    parse_current_rev,
+    check_skill_staleness,
+    find_authoring_skills,
+    ERROR,
+    WARN,
+    HINT,
+    board_rows,
+    awaiting_ruling,
+    ungraded_streams,
+    find_sow_roots,
+    render_state_zone,
+    splice_state_zone,
+    intake_open_rows,
+    build_ruling_index,
+    render_ruling_index,
+    next_ruling_id,
+    _MINT_RACE_NOTE,
+    _MINT_RESERVED_NOTE,
+    scan_ref_ruling_claims,
+    reserve_sow_stub,
+    reserve_ruling_stub,
+    words_to_slug,
+    build_stream_index,
+    render_stream_index,
+    check_binds_corpus,
+    build_sow_n_index,
+    check_ruling_receipts,
+    build_stem_index,
+    git_ref_state,
+    format_ref_disclosure,
+)
+
+_SYM = {ERROR: "✗", WARN: "⚠", HINT: "→"}
+
+
+def _version():
+    """The REAL installed version. A hardcoded banner string printed v0.4 against a
+    0.10.0 wheel and caused stale-binary false alarms all week (doctrine) -
+    including ten blocks lost at 0.9.0 and one of mine at example-stream-PROV-19."""
+    for _n in ("zero-employee", "sow-lint"):
+        try:
+            from importlib.metadata import version
+
+            return version(_n)
+        except Exception:
+            continue
+    return "unknown"
+
+
+# NO HARDCODED HOST PATH. The prior constant named `example-org-sows`, a path that
+# stopped existing at the projects/ restructure - a dead fallback nobody noticed because
+# the walk-up in _discover_root always won first. Machine-pinned paths cost a migration
+# every time the host changes (example-host -> example-host, example-user -> example-user).
+import os
+
+_ENV_SOWS = "ZEO_SOWS_ROOT"
+
+
+def _discover_root(explicit):
+    # Ergonomics: --board and --inbox should NOT require a path. Resolve in order:
+    # (1) an explicit positional if given; (2) walk UP from cwd to a dir containing
+    # claude-md/CLAUDE.md (the sows-repo marker the linter already keys on); (3) the
+    # ZEO_SOWS_ROOT env var. A stream runs `sow-lint --inbox example-stream` from anywhere.
+    #
+    # doctrine(a): an explicit positional used to be returned VERBATIM, unvalidated -
+    # `sow-lint --mint ruling org-master`, run from INSIDE org-master, silently built the
+    # nonexistent path `org-master/org-master` and every downstream glob against it came
+    # back empty (0 ruling homes) with no error, which is what let the hardcoded 200 floor
+    # (item b) win uncontested. An explicit arg now gets the SAME walk-up as cwd/env below -
+    # find_canonical_claude_md resolves it, then walks UP from it (or its parent, if it
+    # doesn't exist) to the nearest claude-md/CLAUDE.md - so a near-miss path self-heals to
+    # the real corpus root exactly like this example-org repro needs, and a path with NO
+    # corpus anywhere above it returns None, hitting the SAME "couldn't find the sows repo"
+    # guard every call site here already has - discovery fails loudly, never a footnote
+    # under a confident number (doctrine).
+    if explicit:
+        canon = find_canonical_claude_md(explicit)
+        return canon.parent.parent if canon else None
+    here = pathlib.Path.cwd()
+    for d in (here, *here.parents):
+        if (d / "claude-md" / "CLAUDE.md").is_file():
+            return d
+    env = os.environ.get(_ENV_SOWS)
+    if env:
+        k = pathlib.Path(env).expanduser()
+        if (k / "claude-md" / "CLAUDE.md").is_file():
+            return k
+    return None
+
+
+def _inbox(root, stream) -> int:
+    """A stream's own view: open questions + rulings that answered it. The reliable
+    form of the hand-grep that returns false-silence on a syntax slip (DS5-INBOX-239)."""
+    files_fm = []
+    for f in iter_sow_files(root):
+        fm = extract_frontmatter(f.read_text(encoding="utf-8", errors="replace"))
+        if isinstance(fm, dict):
+            files_fm.append((str(f), fm))
+    aw = [r for r in awaiting_ruling(files_fm, root=root) if str(r["stream"]).lower() == stream.lower()]
+    # THREE closure states (doctrine): a SOW leaves OPEN if a ruling answered it (answered)
+    # OR a verified resolved_by closed it (resolved). Supersession is the one self-serving
+    # resolver - its own section for sampled human audit (Sparring addition 2, binding).
+    ans = [r for r in aw if r.get("answered")]
+    superseded = [r for r in aw if r.get("supersession") and not r.get("answered")]
+    resolved = [r for r in aw if r.get("resolved") and not r.get("supersession") and not r.get("answered")]
+    openq = [r for r in aw if not r.get("answered") and not r.get("resolved")]
+    # COVERAGE (doctrine / Sparring s2): the inbox must DECLARE its blind spot. A
+    # confident "0 open" that actually means "I can't parse this stream" is the false-ANSWERED
+    # class - blindness reading as health. Count the stream's raw .md files vs the ones with
+    # parseable frontmatter; the gap is INVISIBLE (pre-schema, migration pending).
+    _raw = [f for f in iter_sow_files(root) if str(f).lower().rfind(f"/{stream.lower()}/") != -1]
+    _readable = 0
+    for f in _raw:
+        fm = extract_frontmatter(pathlib.Path(f).read_text(encoding="utf-8", errors="replace"))
+        if isinstance(fm, dict):
+            _readable += 1
+    _invisible = len(_raw) - _readable
+    print(f"INBOX: {stream}")
+    # doctrine: this reads pathlib off disk, zero git (correct - a seat must see its
+    # own uncommitted work), but "disk" is a CHECKOUT and the question is usually about the
+    # TRUNK. Name which one this is, every invocation.
+    print(f"  {format_ref_disclosure(git_ref_state(root))}")
+    if _invisible:
+        print(
+            f"  ⚠ COVERAGE: {len(_raw)} documents · {_readable} readable · "
+            f"{_invisible} INVISIBLE (pre-schema — migration pending, not counted below)"
+        )
+    else:
+        print(f"  COVERAGE: {len(_raw)} documents, all readable")
+    print(
+        f"  {len(openq)} truly open · {len(ans)} answered-by-ruling · "
+        f"{len(resolved)} resolved · {len(superseded)} by-supersession"
+    )
+    print("")
+    print("OPEN (awaiting a ruling — nothing has closed these):")
+    for r in sorted(openq, key=lambda x: str(x["rev"])):
+        print(f"  SOW-{r['rev']:<4} asked {r['updated']}   {r['file']}")
+    if not openq:
+        print("  (none)")
+    print("")
+    print("ANSWERED-BY-RULING (cite it in your next SOW to close the loop):")
+    for r in sorted(ans, key=lambda x: str(x["rev"])):
+        nnn, upd = r["answered"]
+        print(f"  SOW-{r['rev']:<4} <- RULING-{nnn} ({upd})   {r['file']}")
+    if not ans:
+        print("  (none)")
+    print("")
+    print("RESOLVED (closed by implementation/doctrine, verified resolver — not awaiting anything):")
+    for r in sorted(resolved, key=lambda x: str(x["rev"])):
+        k, tgt = r["resolved"]
+        print(f"  SOW-{r['rev']:<4} <- {k}: {tgt}   {r['file']}")
+    if not resolved:
+        print("  (none)")
+    print("")
+    print("RESOLVED-BY-SUPERSESSION (self-declared — sampled human audit, Sparring addition 2):")
+    for r in sorted(superseded, key=lambda x: str(x["rev"])):
+        k, tgt = r["resolved"]
+        print(f"  SOW-{r['rev']:<4} <- {tgt}   {r['file']}")
+    if not superseded:
+        print("  (none)")
+    return 0
+
+
+def _triage(root) -> int:
+    """The operator worklist: whom do I help today (doctrine).
+
+    ASSEMBLY, NOT CONSTRUCTION (example-stream doctrine): every classification here
+    already exists in core. In particular the NEEDS-SUCCESSOR bucket CALLS
+    awaiting_ruling(), whose consumed-ruling filter (l977-1014) is MANDATED by
+    doctrine - a stream that moved past the answered SOW is not listed. The
+    board-triage.sh prototype over-reported precisely because a shell script
+    scraping STATE.md cannot reach that filter.
+
+    The prototype is the LAYOUT spec (s2.3), not the implementation - and its awk
+    hardcodes `(example-project|governance-layer|example-project|zeo)`, so it is structurally
+    blind to three projects holding dark files. Projects are DERIVED here.
+    """
+    files_fm = []
+    for f in iter_sow_files(root):
+        fm = extract_frontmatter(f.read_text(encoding="utf-8", errors="replace"))
+        if isinstance(fm, dict):
+            files_fm.append((str(f), fm))
+    rows = board_rows(files_fm)
+    aw = awaiting_ruling(files_fm, root=root)
+    sow_roots = find_sow_roots(root)
+    ug = [u for r in sow_roots for u in ungraded_streams(r)]
+    flat = [x for r in sow_roots for x in flat_dark_files(r)]
+
+    def by_status(*want):
+        return [r for r in rows if str(r["status"]).upper().split("-SEE")[0] in want]
+
+    openq = [r for r in aw if not r.get("answered") and not r.get("resolved")]
+    ans, suppressed = needs_successor(aw, rows)  # doctrine, MANDATED
+    needs_master = by_status("RULING-REQUESTED")
+    paused = by_status("HELD", "HANDOVER")
+    blocked = by_status("BLOCKED")
+    dark_rows = by_status("UNKNOWN")
+    resting = by_status("CLOSEOUT", "SHIPPED", "SUPERSEDED", "VOIDED", "STALE", "FINDING")
+    working = by_status("DRAFT", "DESIGN", "PROGRESS")
+
+    intake_open = intake_open_rows(root)
+
+    print(f"BOARD TRIAGE - {len(rows)} streams across {len(sow_roots)} projects")
+    print("")
+    print(
+        f"INTAKE - unconverted operator intent, OPEN only ({len(intake_open)}; "
+        f"doctrine item 3 - a projection, not evidence, doctrine)"
+    )
+    for x in intake_open:
+        print(f"   {x['project']}  {x['intake']}  filed {x['created']}")
+    print("")
+    print(f"NEEDS MASTER - a ruling is owed ({len(needs_master)} streams, {len(openq)} open questions)")
+    for r in needs_master:
+        print(f"   {r['project']}/{r['stream']} SOW-{r['latest']}  ({r['updated']})")
+    for q in openq:
+        print(f"     OPEN  {q['stream']} SOW-{q['rev']}  asked {q['updated']}")
+    print("")
+    print(
+        f"NEEDS A SUCCESSOR - ruled, maybe unread ({len(ans)}; "
+        f"{len(suppressed)} suppressed as already-acted per doctrine)"
+    )
+    for r in ans:
+        nnn, upd = r["answered"]
+        print(f"   {r['stream']} SOW-{r['rev']} -> RULING-{nnn} ({upd})")
+    print("")
+    print(f"PAUSED - held/handover, waiting to be picked up ({len(paused)})")
+    for r in paused:
+        print(f"   {r['project']}/{r['stream']} SOW-{r['latest']}  {r['status']}")
+    print("")
+    print(f"BLOCKED - external obstruction ({len(blocked)})")
+    for r in blocked:
+        print(f"   {r['project']}/{r['stream']} SOW-{r['latest']}")
+    print("")
+    dark_total = len(dark_rows) + len(ug) + len(flat)
+    print(f"DARK - invisible to the board; the migration burn-down meter (doctrine): {dark_total}")
+    for r in dark_rows:
+        print(f"   UNKNOWN-rev  {r['project']}/{r['stream']}")
+    for u in ug:
+        print(f"   pre-schema   {u['project']}/{u['stream']}  ({u['files']} files)")
+    if flat:
+        print(
+            f"   FLAT files directly under <project>/sow/ - no stream dir ({len(flat)}); invisible to the stream walk:"
+        )
+        for x in flat:
+            print(f"      {x['project']}/{x['file']}")
+    print("")
+    print(
+        f"RESTING - done, not your attention: {len(resting)} streams "
+        f"(still-working DRAFT/DESIGN/PROGRESS: {len(working)})"
+    )
+    return 0
+
+
+def _board(root) -> int:
+    files_fm = []
+    for f in iter_sow_files(root):
+        fm = extract_frontmatter(f.read_text(encoding="utf-8", errors="replace"))
+        if isinstance(fm, dict):
+            files_fm.append((str(f), fm))
+    rows = board_rows(files_fm)
+    aw = awaiting_ruling(files_fm, root=root)
+    ug = [u for r in find_sow_roots(root) for u in ungraded_streams(r)]
+    head = (
+        subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        or "UNKNOWN-not-a-git-repo"
+    )
+    # doctrine (applied here, not just where s2 named it): captured BEFORE this
+    # verb's own write - the disclosure must describe the state that was READ, not get
+    # contaminated by the file this same call is about to create (a fresh STATE.md is
+    # itself an uncommitted change the moment it lands, which would make every run report
+    # "dirty" regardless of what the corpus looked like beforehand).
+    ref_state = git_ref_state(root)
+    zone = render_state_zone(rows, head, datetime.date.today(), aw, ug)
+    target = pathlib.Path(root) / "STATE.md"
+    existing = target.read_text(encoding="utf-8", errors="replace") if target.is_file() else None
+    try:
+        out = splice_state_zone(existing, zone, title=pathlib.Path(root).resolve().name)
+    except ValueError as e:
+        print(f"FATAL: {e}", file=sys.stderr)
+        return 2
+    target.write_text(out, encoding="utf-8")
+    o = len([x for x in aw if not x.get("answered")])
+    a = len(aw) - o
+    print(f"board written: {target}")
+    print(f"  {format_ref_disclosure(ref_state)}")
+    print(
+        f"  {len(rows)} streams across {len(find_sow_roots(root))} projects · "
+        f"{o} open questions · {a} ruled-but-maybe-unread · {len(ug)} ungraded streams"
+    )
+    print("")
+    print(f"{'PROJECT':<18} {'STREAM':<22} {'LATEST':>6}  {'STATUS':<17} UPDATED")
+    for r in rows:
+        print(
+            f"{str(r['project'])[:18]:<18} {str(r['stream'])[:22]:<22} "
+            f"{str(r['latest']):>6}  {str(r['status'])[:17]:<17} {r['updated']}"
+        )
+    return 0
+
+
+def _commit_check_corpus(root) -> int:
+    """doctrine(1): DETECT at the commit path, corpus-wide - the corpus-level twin of
+    --commit-check's per-file pass, invoked ONCE PER COMMIT (by the hook, after its per-file
+    loop) rather than once per staged file. This is a SEPARATE verb, not --commit-check made
+    corpus-aware in general (s7's open question, example-stream's call): re-scanning the WHOLE ruling
+    namespace on every one of a commit's staged files would be O(files-staged x corpus-size)
+    for no benefit, since --commit-check's own per-file contract (fast, gates ONE file's own
+    keystone/requested_by shape) is unrelated to a cross-file collision. One pass, once,
+    beside it.
+
+    THE BOUND, stated here because doctrine(1) requires it stated in the code, not just
+    the ruling: this catches a same-tree ruling-number collision at the FIRST commit after
+    BOTH colliding files exist on disk together. It does NOT catch the cross-seat case at the
+    moment either individual seat commits - the peer's file is not on disk yet, and no
+    per-commit gate on either side of a two-seat race can see the other seat's uncommitted
+    work. What this closes is everything downstream of the race itself: today NOTHING catches
+    the collision, ever, until a human happens to notice (which is what actually happened);
+    after this, the first commit that lands both files - typically minutes after the race,
+    not weeks - fails closed.
+    """
+    homes = [
+        pathlib.Path(root) / "ruling",
+        *pathlib.Path(root).glob("projects/*/ruling"),
+        *pathlib.Path(root).glob("*/ruling"),
+    ]
+    files_fm = []
+    for h in homes:
+        if not h.is_dir():
+            continue
+        for f in sorted(h.glob("RULING-*.md")):
+            fm = extract_frontmatter(f.read_text(encoding="utf-8", errors="replace"))
+            if isinstance(fm, dict):
+                files_fm.append((str(f), fm))
+    collisions = check_ruling_corpus(files_fm)
+    if not collisions:
+        print(f"COMMIT-CHECK-CORPUS: 0 ruling-number collisions across {len(files_fm)} ruling file(s)")
+        return 0
+    print(f"COMMIT-CHECK-CORPUS: {len(collisions)} file(s) in a ruling-number collision")
+    for path, findings in sorted(collisions.items()):
+        for fi in findings:
+            print(f"    {_SYM.get(fi.severity, '?')} [{fi.code}] {path}: {fi.message}")
+    return 1
+
+
+def _ruling_index(root) -> int:
+    """doctrine(2)/s4: regenerate ruling-index.md WHOLE at the corpus root, same
+    pattern as --board's STATE.md - the file is entirely machine-owned (no human-authored
+    content to splice around, unlike STATE.md's zone-within-a-larger-doc), so a whole-file
+    write is correct here, not a truncation risk."""
+    entries = build_ruling_index(root)
+    head = (
+        subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        or "UNKNOWN-not-a-git-repo"
+    )
+    # doctrine: captured BEFORE the write below, so this run's own fresh
+    # ruling-index.md (uncommitted the instant it lands) never contaminates the reading.
+    ref_state = git_ref_state(root)
+    out = render_ruling_index(entries, head, datetime.date.today())
+    target = pathlib.Path(root) / "ruling-index.md"
+    target.write_text(out, encoding="utf-8")
+    # Same criterion render_ruling_index uses per-row (PAID: Master reported the per-row
+    # note calling an owner+tombstone pair "legal per-scope reuse" when the tombstone, not
+    # a second scope's owner, was the only co-occupant) - this summary line had the SAME
+    # bug one level up: counting ALL rows sharing an integer, tombstones included, as if
+    # every one were doctrine reuse. Legal reuse is specifically 2+ OWNER rows in
+    # DIFFERENT scopes; keep the two counts (reuse vs tombstone-explained) separate so the
+    # headline never claims more "legal reuse" than actually exists.
+    reuse = 0
+    for rows in entries.values():
+        owners = [r for r in rows if r["role"] == "owner"]
+        if len(owners) > 1 and len({r.get("scope") for r in owners}) > 1:
+            reuse += 1
+    tomb = sum(1 for rows in entries.values() for r in rows if r["role"] == "tombstone")
+    print(f"ruling-index written: {target}")
+    print(f"  {format_ref_disclosure(ref_state)}")
+    print(
+        f"  {len(entries)} integer(s) tracked · {reuse} with multiple owners "
+        f"(legal per-scope reuse, doctrine) · {tomb} tombstone(s) (renumbered-away)"
+    )
+    return 0
+
+
+def _mint(root, kind, stream, words: str | None = None) -> int:
+    """Mint the next free id and, when --words is given, RESERVE it by writing a stub.
+
+    Without --words: advisory print only (legacy doctrine behavior + race note).
+    With --words: exclusive stub create under the canonical name; peer mints see the file.
+    """
+    ts = datetime.datetime.now().isoformat(timespec="seconds")
+    if kind == "ruling":
+        if words:
+            path, detail = reserve_ruling_stub(root, words)
+            if path is None:
+                print(f"MINT: REFUSED - {detail}", file=sys.stderr)
+                return 1
+            print(f"MINT: RESERVED ruling at {path}")
+            print(f"  {detail}")
+            print("  slug: " + words_to_slug(words))
+            print("  " + _MINT_RESERVED_NOTE.format(path=path))
+            return 0
+        nxt, homes, total = next_ruling_id(root, project=None)
+        if not homes:
+            print(
+                f"MINT: REFUSED - 0 ruling home(s) discoverable under {root}",
+                file=sys.stderr,
+            )
+            print(
+                "  no `ruling/` directory found at the root or under any project - this "
+                "corpus cannot be read, so no number is minted (doctrine): a "
+                "fallback firing on a failed read is how a discovery bug becomes a "
+                "doctrine bug.",
+                file=sys.stderr,
+            )
+            return 1
+        ref_claims = scan_ref_ruling_claims(root)
+        colliding = {ref: (n, p) for ref, (n, p) in ref_claims.items() if n >= nxt}
+        disk_nxt = nxt
+        if colliding:
+            widest_claim = max(n for n, _p in colliding.values())
+            nxt = max(disk_nxt, widest_claim + 1)
+        print(f"MINT: next ORG-SCOPE ruling id = {nxt}")
+        if colliding:
+            print(f"  disk says {disk_nxt}, {len(colliding)} pushed ref(s) claim up to {widest_claim} -> MINTING {nxt}")
+        print(f"  read from {len(homes)} ruling home(s), {total} existing ruling file(s) seen")
+        print("  " + _MINT_RACE_NOTE.format(kind="ruling", ts=ts))
+        print(
+            "  tip: pass --words \"four to five words\" to RESERVE a canonical "
+            "RULING-NNN-<slug>.md stub on disk"
+        )
+        if colliding:
+            print(
+                f"  ⚠ REF-COLLISION: {len(colliding)} pushed ref(s) already claimed >= "
+                f"the disk-only answer ({disk_nxt}) - accounted for in the number above:"
+            )
+            for ref, (n, p) in sorted(colliding.items(), key=lambda kv: -kv[1][0]):
+                print(f"      {ref} already carries RULING-{n} at {p}")
+        elif ref_claims:
+            top_ref, (top_n, top_p) = max(ref_claims.items(), key=lambda kv: kv[1][0])
+            print(f"  ref scan: highest claim on any ref is RULING-{top_n} ({top_ref}) - {nxt} is still free")
+        else:
+            print(
+                "  ref scan: no ruling claims found on any refs/remotes/* ref "
+                "(no remotes, fetch failed, or none carry one)"
+            )
+        return 0
+    if kind == "sow":
+        if not stream:
+            print(
+                "sow-lint --mint sow <stream>: a stream name is required",
+                file=sys.stderr,
+            )
+            return 2
+        if words:
+            path, detail = reserve_sow_stub(root, stream, words)
+            if path is None:
+                print(f"MINT: REFUSED - {detail}", file=sys.stderr)
+                return 1
+            print(f"MINT: RESERVED sow at {path}")
+            print(f"  {detail}")
+            print("  slug: " + words_to_slug(words))
+            print("  " + _MINT_RESERVED_NOTE.format(path=path))
+            return 0
+        L = locate_stream(root, stream)
+        if L["ambiguous"]:
+            print(
+                f"MINT: AMBIGUOUS - {len(L['candidates'])} dirs named {stream!r}, a human rules this, not the mint",
+                file=sys.stderr,
+            )
+            return 1
+        if L["next_n"] is not None:
+            nxt = L["next_n"]
+        elif not L["chain_dir"]:
+            nxt = 1  # brand-new stream, no chain dir exists yet - its first SOW is n:1
+        else:
+            print(
+                f"MINT: {stream}'s chain dir exists but no filed SOW carries an n: - "
+                "cannot derive a next integer safely, walk the chain by hand",
+                file=sys.stderr,
+            )
+            return 1
+        print(f"MINT: next {stream} SOW n = {nxt}")
+        print("  " + _MINT_RACE_NOTE.format(kind="sow", ts=ts))
+        print(
+            "  tip: pass --words \"four to five words\" to RESERVE a canonical "
+            f"{stream}-SOW-{nxt}-<slug>.md stub on disk"
+        )
+        return 0
+    print(
+        f"sow-lint --mint: unknown kind {kind!r} - expected 'ruling' or 'sow'",
+        file=sys.stderr,
+    )
+    return 2
+
+
+def _stream_index_cmd(root) -> int:
+    """doctrine: generate stream-index.md WHOLE at the sows root - the mechanism
+    that makes `binds:`, and doctrine's `<stream>#<n>` form, dereferenceable at all."""
+    entries = build_stream_index(root)
+    head = (
+        subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        or "UNKNOWN-not-a-git-repo"
+    )
+    # doctrine: captured BEFORE the write below, same reasoning as _board/_ruling_index
+    # - this run's own fresh stream-index.md must not contaminate its own disclosure.
+    ref_state = git_ref_state(root)
+    out = render_stream_index(entries, head, datetime.date.today())
+    target = pathlib.Path(root) / "stream-index.md"
+    target.write_text(out, encoding="utf-8")
+    amb = [k for k, v in entries.items() if v["ambiguous"]]
+    pre = [k for k, v in entries.items() if v["preschema"]]
+    print(f"stream-index.md written: {target}")
+    print(f"  {format_ref_disclosure(ref_state)}")
+    print(
+        f"  {len(entries)} stream id(s) · {len(amb)} ambiguous (recorded, not resolved) · "
+        f"{len(pre)} pre-schema (matched by dirname)"
+    )
+    if amb:
+        print(f"  ambiguous: {', '.join(sorted(amb))}")
+    return 0
+
+
+def _digest(root, since) -> int:
+    """example-stream-CHARTER-03 register item 4: `zeo --digest [since]`. FOLDS IN
+    tools/hooks/zeo-digest.sh's own logic - ported section by section, the BOUNDING logic
+    (what counts as "this session") is NOT rewritten, only translated from bash to Python,
+    per the coordinator's explicit instruction. Every section below is traceable to one
+    named block in the shell script; nothing here is a reinterpretation of what "session"
+    or "owed" means.
+
+    THE BOUNDING RULE, unchanged: a SESSION is a run of commits by ONE author since the
+    last commit by someone else - which is what a reviewer means by "what did it do".
+    `git --since` filters on AUTHOR DATE, which a rebase preserves while moving the
+    commit, so a clock window lies after a rebase; the author-boundary walk does not.
+    When `since` IS given (e.g. "4h", "1d"), that literal `--since` filter is used
+    instead - exactly the same bash branch, not a new mode invented here.
+    """
+    root = str(pathlib.Path(root).resolve())
+
+    def _git(*args):
+        r = subprocess.run(["git", "-C", root, *args], capture_output=True, text=True)
+        return r.stdout if r.returncode == 0 else ""
+
+    if not since:
+        me = _git("log", "-1", "--format=%an").strip()
+        bound = None
+        for line in _git("log", "--format=%H %an").splitlines():
+            h, _, an = line.partition(" ")
+            if an != me:
+                bound = h
+                break
+        rng = f"{bound}..HEAD" if bound else "HEAD"
+        log = lambda *a: _git("log", rng, *a)  # noqa: E731
+        since_label = ""
+    else:
+        log = lambda *a: _git("log", f"--since={since}", *a)  # noqa: E731
+        since_label = since
+
+    host = socket.gethostname().split(".")[0]
+    today = datetime.date.today().isoformat()
+    out = [
+        f"===== ZEO SESSION DIGEST · since {since_label} · "
+        f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M')} · {host} ====="
+    ]
+
+    out += ["", "--- COMMITS ---"]
+    commit_lines = [l[:118] for l in log("--format=  %h %an  %s").splitlines()]
+    out += commit_lines if commit_lines else ["  none"]
+    total = len(log("--oneline").splitlines())
+    out.append(f"  total: {total}")
+
+    out += ["", "--- RULINGS FILED ---"]
+    added = sorted(
+        set(l for l in log("--diff-filter=A", "--name-only", "--format=", "--", "ruling/*.md").splitlines() if l)
+    )
+    if added:
+        for f in added:
+            fp = pathlib.Path(root) / f
+            if not fp.is_file():
+                continue
+            title = ""
+            for l in fp.read_text(encoding="utf-8", errors="replace").splitlines():
+                if l.startswith("title:"):
+                    title = l[7:157]
+                    break
+            out.append(f"  {fp.name}")
+            out.append(f"      {title}")
+    else:
+        out.append("  none")
+
+    out += ["", "--- SOWs FILED ---"]
+    sow_added = sorted(
+        set(l for l in log("--diff-filter=A", "--name-only", "--format=", "--", "*/sow/*").splitlines() if l)
+    )
+    out += [f"  {pathlib.Path(f).name}" for f in sow_added] if sow_added else ["  none"]
+
+    out += [
+        "",
+        "--- SELF-CORRECTIONS AND RETRACTIONS (what a reviewer reads FIRST) ---",
+    ]
+    import re as _re
+
+    kw = _re.compile(r"correct|retract|wrong|falsif|my own|i paid|mine|error|withdraw", _re.I)
+    sc = [l[:118] for l in log("--format=%h %s").splitlines() if kw.search(l)]
+    out += [f"  {l}" for l in sc] if sc else ["  none"]
+
+    out += ["", "--- WHAT IS OWED NOW ---"]
+    buf = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf):
+            _triage(pathlib.Path(root))
+        triage_lines = buf.getvalue().splitlines()[:16]
+        out += [f"  {l}" for l in triage_lines] if triage_lines else ["  (zeo not on PATH)"]
+    except Exception:
+        out.append("  (zeo not on PATH)")
+
+    out += [
+        "",
+        "--- UNCOSIGNED ORG-SCOPE RULINGS (doctrine: not in force until co-signed) ---",
+    ]
+    n = 0
+    rd = pathlib.Path(root) / "ruling"
+    if rd.is_dir():
+        for f in sorted(rd.glob("RULING-*.md")):
+            text = f.read_text(encoding="utf-8", errors="replace")
+            if "\nscope: org" not in text and not text.startswith("scope: org"):
+                continue
+            if _re.search(r"COSIGNED|SPARRING-COSIGN", text, _re.I):
+                continue
+            out.append(f"  {f.name}")
+            n += 1
+    out.append(f"  count: {n}")
+
+    out += ["", "--- TREE STATE (anything a seat left behind) ---"]
+    status = [l for l in _git("status", "--short").splitlines() if not l.startswith("??")][:8]
+    out += status if status else ["  clean"]
+    unpushed_raw = subprocess.run(
+        ["git", "-C", root, "log", "--oneline", "@{u}..HEAD"],
+        capture_output=True,
+        text=True,
+    )
+    unpushed = len(unpushed_raw.stdout.splitlines()) if unpushed_raw.returncode == 0 else 0
+    out.append(f"  unpushed: {unpushed}")
+
+    out += ["", "--- SESSION COST ---"]
+    costlog = pathlib.Path(root) / "tools" / "stream-instruments" / "session-costs.jsonl"
+    if costlog.is_file():
+        try:
+            sc = session_cost_report(cost_log=costlog)
+            out.append(
+                "  DERIVED {}  in={} out={} cache_r={} events={}  model={} as_of={}".format(
+                    format_usd(sc["usd"]),
+                    sc["input_tokens"],
+                    sc["output_tokens"],
+                    sc["cache_read_tokens"],
+                    sc["events"],
+                    sc["model"],
+                    sc["as_of"],
+                )
+            )
+            out.append(f"  ({sc['honesty']})")
+        except Exception:
+            tail = costlog.read_text(encoding="utf-8", errors="replace").splitlines()[-4:]
+            out += [f"  {l}" for l in tail] if tail else ["  no log"]
+    else:
+        out.append("  no log")
+
+    out += ["", "===== END DIGEST ====="]
+    print("\n".join(out))
+    return 0
+
+
+_USAGE = """sow-lint - the example-org governance linter
+
+USAGE
+  sow-lint <file-or-dir>          Lint a SOW / ruling / boot doc (grades it against canonical).
+  sow-lint --board [path]         Write STATE.md - the fleet board. Path optional (auto-found).
+  sow-lint --triage [path]        The operator worklist: who needs a ruling, a successor, unsticking.
+  sow-lint --promote <stream-dir>  Plan the canonical renames (dry-run, writes nothing).
+  sow-lint --resync-check <upstream> [target]
+                                  Report CURRENT / STALE / SKIP per inherited file.
+  sow-lint --resync-apply <upstream> [target]
+                                  RE-DERIVE inherited files (UPSTREAM-SHA + transforms).
+                                  Skips locally authored files. Never commits or pushes.
+  sow-lint hooks install [path]   Write tools/hooks templates that call sow-lint; install
+                                  .git/hooks/pre-commit. Stop uses --session-cost (no rates).
+  sow-lint --inbox <stream> [path]
+                                  Show ONE stream's open questions + rulings that answered it.
+                                  Path optional - run it from anywhere: sow-lint --inbox example-stream
+  sow-lint --commit-check-corpus [path]
+                                  doctrine(1): a corpus-level pass, once per commit, that
+                                  catches a same-tree ruling-number collision --commit-check's
+                                  per-file gate cannot see. Does NOT catch the cross-seat race
+                                  at either individual commit - the bound is in its own --help
+                                  text and in the code, not just this ruling.
+  sow-lint --ruling-index [path]  doctrine(2)/s4: regenerate ruling-index.md WHOLE -
+                                  every ruling integer's current owner, plus a TOMBSTONE row
+                                  for any integer a `minted_as:` field renumbered away from.
+                                  Navigation, not evidence (same caveat as stream-index.md).
+  sow-lint --mint ruling [path]   doctrine(3): the next free ORG-SCOPE ruling integer,
+                                  read live off disk. NOT reserved - a concurrent peer can
+                                  claim the same one; the race limitation prints on every call.
+  sow-lint --mint sow <stream> [path]
+                                  The next SOW n: for one stream (same read locate_stream
+                                  already does). Same race limitation, printed every call.
+  sow-lint --stream-index [path]  Write stream-index.md - a stream id resolves to a path
+                                  (doctrine). Regenerated WHOLE on every run.
+  sow-lint --digest [since] [path]
+                                  What happened in a session, read-only, pasteable - folds
+                                  in tools/hooks/zeo-digest.sh, same bounding logic (one
+                                  author's commits since the last commit by someone else,
+                                  or an explicit --since window like 4h/1d).
+
+OPTIONS
+  --board            Regenerate the coordination board (STATE.md) from every SOW's frontmatter.
+  --stream-index     Regenerate stream-index.md (doctrine) - the id-to-path map that
+                     `binds:` and requested_by's <stream>#<n> form resolve through.
+  --inbox <stream>   A stream's own view: what it's waiting on, what was ruled for it.
+  --triage           The operator worklist: whom do I help today (six buckets).
+  --commit-check     At the commit path: a ghost requested_by is an ERROR, not a WARN
+                     (doctrine - gate the future; landed ghosts stay WARN).
+  --commit-check-corpus [path]
+                     doctrine(1): ruling-number collisions, corpus-wide, once per
+                     commit - beside --commit-check's per-file pass, not folded into it.
+  --ruling-index [path]
+                     doctrine(2)/s4: regenerate ruling-index.md whole (owner + any
+                     tombstone rows from a `minted_as:` renumber). Navigation, not evidence.
+  --mint ruling|sow <stream> [path]
+                     Next free integer. Pass --words "four to five words" to
+                     RESERVE a canonical stub on disk (exclusive create).
+  --words "..."      Slug words for --mint reservation (kebab-normalized).
+  --digest [since] [path]
+                     example-stream-CHARTER-03 item 4: what happened in a session - commits, rulings
+                     and SOWs filed, self-corrections, what's owed, uncosigned org-scope
+                     rulings, tree state, session cost. Ports zeo-digest.sh's sections and
+                     its author-boundary bounding logic unchanged.
+  --quiet            Suppress the per-file SKIP diagnosis blocks (genre-unknown,
+                     preschema-block) on a lint run; the named-cause summary counts
+                     still print (doctrine item 2).
+  --migrate <file>   Generate schema-16 frontmatter for a PRE-SCHEMA file (Class-A only).
+                     The body is never regenerated; the gate is the only exit.
+  --model <tag>      Claimant model for --migrate (default: gemma4:latest).
+  --migrate-check <file>
+                     Grade a file as if it must be a conformant SOW (the gate).
+  --promote <dir>    DRY-RUN the rename plan for one stream dir: n in git birth order,
+                     predecessor, corpus. Writes NOTHING; refuses on any collision.
+  --resync-check <upstream> [target]
+                     Is an inherited doctrine corpus current? Compares each file's
+                     recorded UPSTREAM-SHA against the upstream file now.
+  --resync-apply <upstream> [target]
+                     Re-derive inherited doctrine from upstream (writes files; no commit).
+  hooks install [path]
+                     Install tools/hooks templates + .git/hooks/pre-commit into a corpus.
+  --kosten [stream]   Corpus artifact token ESTIMATE + DERIVED USD (fixed tax, SOWs,
+                     rulings, waste). Session tokens are NOT here — use --session-cost.
+  --repo-cost [path] Ahead-of-work: estimate tokens in a repo/tree and DERIVE USD at
+                     --model rates (input-only). Default path: cwd.
+  --session-cost     After a run: usage from --transcript or --cost-log × dated rates.
+  --transcript <p>   Claude Code JSONL transcript for --session-cost.
+  --cost-log <p>     session-costs.jsonl for --session-cost (default under corpus).
+  --append-cost-log <p>
+                     Append one JSONL session-cost record (for Stop hooks).
+  --count-via local|anthropic
+                     Token estimator for --kosten/--repo-cost (default local=tiktoken
+                     proxy). anthropic uses the free count_tokens endpoint (API key).
+  --calibrate        With local estimator: sample fixed-tax files via Anthropic and
+                     scale the walk by the ratio (needs ANTHROPIC_API_KEY).
+  --json             Machine-readable JSON for --repo-cost / --session-cost / --kosten.
+  --model <id>       Rate-table model for cost verbs (default from model_rates.toml);
+                     also the claimant model tag for --migrate.
+  --claude-md <p>    Override the canonical CLAUDE.md path (default: auto-discovered).
+  --skill <p>        Grade a specific skill/boot doc for currency.
+
+The sows repo is auto-discovered by walking up to a claude-md/CLAUDE.md marker,
+so --board and --inbox need NO path when you're in or near the repo."""
+
+
+def main(argv: list[str] | None = None) -> int:
+    # sys.argv has the program name at [0] (strip it); an explicitly-passed list
+    # (tests, direct calls) is ALREADY bare and must NOT be stripped. The old
+    # 'args = argv[1:]' stripped BOTH, so main(['--help']) became [] -> usage-error 2
+    # (diag). This is the arg-convention bug the new CLI tests exposed.
+    args = sys.argv[1:] if argv is None else argv
+    if len(args) >= 2 and args[0] == "hooks" and args[1] == "install":
+        path = args[2] if len(args) > 2 and not str(args[2]).startswith("-") else None
+        root = _discover_root(path)
+        if root is None:
+            print("sow-lint hooks install: run from inside the corpus (or pass a path)", file=sys.stderr)
+            return 2
+        try:
+            info = hooks_install(root)
+        except Exception as e:
+            print(f"sow-lint hooks install: {e}", file=sys.stderr)
+            return 2
+        print(f"HOOKS-INSTALL: wrote {len(info['written'])} template(s) under tools/hooks/")
+        for w in info["written"]:
+            print(f"  {w}")
+        if info["git_hook"]:
+            print(f"  git pre-commit: {info['git_hook']}")
+        else:
+            print("  git pre-commit: skipped (no .git dir)")
+        return 0
+    backfill_project = None
+    locate_stream_name = None
+    want_progress = None
+    want_sollist = None
+    want_restauf = None
+    want_kosten = None
+    want_repo_cost = None  # False-ish None; "" = cwd; str = path
+    want_session_cost = False
+    transcript_path = None
+    cost_log_path = None
+    append_cost_log_path = None
+    count_via = "local"
+    want_calibrate = False
+    want_json = False
+    repair_project = None
+    apply_flag = False
+    limit_n = None
+    resync_upstream = None
+    resync_apply_upstream = None
+    promote_dir = None
+    if any(a in ("--help", "-h") for a in args):
+        print(_USAGE)
+        return 0
+    claude_md_override = None
+    skill_path = None
+    board = False
+    triage = False
+    commit_check_corpus = False
+    ruling_index = False
+    mint_kind = None
+    mint_stream = None
+    mint_words = None
+    stream_index = False
+    want_digest = False
+    digest_since = None
+    inbox_stream = None
+    migrate_check_path = None
+    want_incarnation = False
+    migrate_path = None
+    commit_check = False
+    quiet = False
+    model_tag = None
+    positional = []
+    i = 0
+    while i < len(args):
+        if args[i] == "--claude-md" and i + 1 < len(args):
+            claude_md_override = args[i + 1]
+            i += 2
+        elif args[i] == "--skill" and i + 1 < len(args):
+            skill_path = args[i + 1]
+            i += 2
+        elif args[i] == "--board":
+            board = True
+            i += 1
+        elif args[i] == "--commit-check-corpus":
+            commit_check_corpus = True
+            i += 1
+        elif args[i] == "--ruling-index":
+            ruling_index = True
+            i += 1
+        elif args[i] == "--digest":
+            # `[since]` is OPTIONAL and, when given, is a duration like "4h"/"1d" - never
+            # a path (a path is the ROOT positional, same convention as --restaufwand
+            # etc.). A bare "--digest" (no since) uses the author-boundary walk.
+            nxt = args[i + 1] if i + 1 < len(args) else ""
+            if not nxt or nxt.startswith("--") or pathlib.Path(nxt).exists():
+                want_digest = True
+                digest_since = None
+                i += 1
+            else:
+                want_digest = True
+                digest_since = nxt
+                i += 2
+        elif args[i] == "--mint" and i + 1 < len(args):
+            mint_kind = args[i + 1]
+            j = i + 2
+            if mint_kind == "sow" and j < len(args) and not args[j].startswith("--"):
+                mint_stream = args[j]
+                j += 1
+            i = j
+        elif args[i] == "--words" and i + 1 < len(args):
+            mint_words = args[i + 1]
+            i += 2
+        elif args[i] == "--triage":
+            triage = True
+            i += 1
+        elif args[i] == "--stream-index":
+            stream_index = True
+            i += 1
+        elif args[i] == "--inbox" and i + 1 < len(args):
+            inbox_stream = args[i + 1]
+            i += 2
+        elif args[i] == "--apply":
+            apply_flag = True
+            i += 1
+        elif args[i] == "--limit" and i + 1 < len(args):
+            limit_n = int(args[i + 1])
+            i += 2
+        elif args[i] == "--restaufwand":
+            nxt = args[i + 1] if i + 1 < len(args) else ""
+            if not nxt or nxt.startswith("--") or pathlib.Path(nxt).exists():
+                want_restauf = ""
+                i += 1
+            else:
+                want_restauf = nxt
+                i += 2
+        elif args[i] == "--kosten":
+            nxt = args[i + 1] if i + 1 < len(args) else ""
+            if not nxt or nxt.startswith("--") or pathlib.Path(nxt).exists():
+                want_kosten = ""
+                i += 1
+            else:
+                want_kosten = nxt
+                i += 2
+        elif args[i] == "--repo-cost":
+            nxt = args[i + 1] if i + 1 < len(args) else ""
+            if not nxt or nxt.startswith("--"):
+                want_repo_cost = ""
+                i += 1
+            else:
+                want_repo_cost = nxt
+                i += 2
+        elif args[i] == "--session-cost":
+            want_session_cost = True
+            i += 1
+        elif args[i] == "--transcript" and i + 1 < len(args):
+            transcript_path = args[i + 1]
+            i += 2
+        elif args[i] == "--cost-log" and i + 1 < len(args):
+            cost_log_path = args[i + 1]
+            i += 2
+        elif args[i] == "--append-cost-log" and i + 1 < len(args):
+            append_cost_log_path = args[i + 1]
+            i += 2
+        elif args[i] == "--count-via" and i + 1 < len(args):
+            count_via = args[i + 1]
+            i += 2
+        elif args[i] == "--calibrate":
+            want_calibrate = True
+            i += 1
+        elif args[i] == "--json":
+            want_json = True
+            i += 1
+        elif args[i] in ("--soll-ist", "--drift"):
+            nxt = args[i + 1] if i + 1 < len(args) else ""
+            if not nxt or nxt.startswith("--") or pathlib.Path(nxt).exists():
+                want_sollist = ""
+                i += 1
+            else:
+                want_sollist = nxt
+                i += 2
+        elif args[i] == "--progress":
+            # PAID (GM-example-stream-211): `--progress .` took "." as a STREAM NAME, filtered for a
+            # stream called "." and printed `0 stream(s)` against a full corpus - a silent zero
+            # reading as health, the exact failure this verb exists to catch. An argument that
+            # EXISTS ON DISK is a PATH, never a stream name.
+            nxt = args[i + 1] if i + 1 < len(args) else ""
+            if not nxt or nxt.startswith("--") or pathlib.Path(nxt).exists():
+                want_progress = ""
+                i += 1
+            else:
+                want_progress = nxt
+                i += 2
+        elif args[i] == "--locate" and i + 1 < len(args):
+            locate_stream_name = args[i + 1]
+            i += 2
+        elif args[i] == "--repair-project":
+            repair_project = args[i + 1] if i + 1 < len(args) else "."
+            i += 2 if i + 1 < len(args) else 1
+        elif args[i] == "--backfill-project":
+            backfill_project = args[i + 1] if i + 1 < len(args) else "."
+            i += 2 if i + 1 < len(args) else 1
+        elif args[i] == "--resync-check" and i + 1 < len(args):
+            resync_upstream = args[i + 1]
+            i += 2
+        elif args[i] == "--resync-apply" and i + 1 < len(args):
+            resync_apply_upstream = args[i + 1]
+            i += 2
+        elif args[i] == "--hooks-install":
+            path = args[i + 1] if i + 1 < len(args) and not args[i + 1].startswith("-") else None
+            if path:
+                i += 2
+            else:
+                i += 1
+            root = _discover_root(path)
+            if root is None:
+                print("sow-lint --hooks-install: run from inside the corpus", file=sys.stderr)
+                return 2
+            try:
+                info = hooks_install(root)
+            except Exception as e:
+                print(f"sow-lint --hooks-install: {e}", file=sys.stderr)
+                return 2
+            print(f"HOOKS-INSTALL: wrote {len(info['written'])} template(s) under tools/hooks/")
+            for w in info["written"]:
+                print(f"  {w}")
+            if info["git_hook"]:
+                print(f"  git pre-commit: {info['git_hook']}")
+            else:
+                print("  git pre-commit: skipped (no .git dir)")
+            return 0
+        elif args[i] == "--promote" and i + 1 < len(args):
+            promote_dir = args[i + 1]
+            i += 2
+        elif args[i] == "--incarnation":
+            want_incarnation = True
+            i += 1
+        elif args[i] == "--migrate-check" and i + 1 < len(args):
+            migrate_check_path = []
+            j = i + 1
+            while j < len(args) and not args[j].startswith("--"):
+                migrate_check_path.append(args[j])
+                j += 1
+            i = j
+        elif args[i] == "--migrate" and i + 1 < len(args):
+            migrate_path = args[i + 1]
+            i += 2
+        elif args[i] == "--model" and i + 1 < len(args):
+            model_tag = args[i + 1]
+            i += 2
+        elif args[i] == "--commit-check":
+            commit_check = True
+            i += 1
+        elif args[i] == "--quiet":
+            # doctrine item 2: printing the genre-unknown/preschema-block WARN
+            # for every SKIPped file can be loud on a corpus-wide run — the counts in
+            # the summary line stand either way; --quiet drops only the per-file blocks.
+            quiet = True
+            i += 1
+        else:
+            positional.append(args[i])
+            i += 1
+    # --board and --inbox auto-discover the sows repo; a path is OPTIONAL for them.
+    # --migrate-check takes a FILE and needs no repo root — dispatch before the
+    # board/inbox root-discovery guard (which else-branches to a positional check
+    # and prints usage, the diag fall-through that made the flag unreachable).
+    # --resync-check and --promote take PATHS and need no repo-root discovery; dispatch
+    # before the board/inbox guard (the diag fall-through that made a flag unreachable).
+    #
+    # doctrine: this block (restaufwand/kosten/soll-ist/progress/locate) used to
+    # fall back to the LITERAL STRING "." when no positional was given — not None, unlike
+    # --board/--inbox below (line ~706). _discover_root("."), given a truthy explicit arg,
+    # returns Path(".") UNCONDITIONALLY without walking up to find claude-md/CLAUDE.md, so
+    # these five verbs FAILED OPEN from a wrong cwd ("0 streams") no matter what a caller
+    # passed - removing a hook's OWN "." argument (cc-session-start.sh) fixed NOTHING here,
+    # because the fallback was baked into this file, not the caller. MEASURED before this
+    # fix: `cd /tmp && sow-lint --restaufwand` (zero args) already printed "0 of 0" instead
+    # of refusing, identically to `--restaufwand .` - proven wrong by the ONE verb that WAS
+    # already correct (`--triage`, zero args, correctly printed "couldn't find the sows
+    # repo"). Now `else None`, matching that correct sibling exactly.
+    if want_restauf is not None:
+        r = _discover_root(positional[0] if positional else None)
+        if r is None:
+            print("sow-lint --restaufwand: run from inside the corpus", file=sys.stderr)
+            return 2
+        rows = restaufwand(r, want_restauf or None)
+        order = {
+            "RISING": 0,
+            "FLAT": 1,
+            "SINGLE-POINT": 2,
+            "FALLING": 3,
+            "UNDECLARED": 4,
+        }
+        rows.sort(key=lambda x: (order.get(x["verdict"], 9), x["stream"]))
+        und = [x for x in rows if x["verdict"] == "UNDECLARED"]
+        dw = [x for x in rows if x["needs_done_when"]]
+        print("  RESTAUFWAND - what is LEFT, and whether it is falling (doctrine)")
+        print("  {:<24}{:>10}{:>8}  {}".format("stream", "remaining", "delta", "verdict"))
+        for x in rows:
+            rem = "-" if x["remaining"] is None else str(x["remaining"])
+            dl = "" if x["delta"] is None else ("%+d" % x["delta"])
+            print("  {:<24}{:>10}{:>8}  {}".format(x["stream"], rem, dl, x["verdict"]))
+            if x["done_when"]:
+                print("      done_when: {}".format(str(x["done_when"])[:78]))
+            elif x["needs_done_when"]:
+                print("      NO done_when on a {} status - this stream cannot state when it stops".format(x["status"]))
+        print("  {} of {} declare NO restaufwand - DISTANCE IS UNMEASURABLE for those".format(len(und), len(rows)))
+        print("  {} WORKING stream(s) carry no done_when (doctrine requires one)".format(len(dw)))
+        return 0
+
+    if want_kosten is not None:
+        r = _discover_root(positional[0] if positional else None)
+        if r is None:
+            print("sow-lint --kosten: run from inside the corpus", file=sys.stderr)
+            return 2
+        if count_via not in ("local", "anthropic"):
+            print(f"sow-lint --count-via: expected local|anthropic, got {count_via!r}", file=sys.stderr)
+            return 2
+        try:
+            rates = get_model_rates(model_tag)
+        except UnknownModelError as e:
+            print(f"sow-lint --kosten: {e}", file=sys.stderr)
+            return 2
+        samples = fixed_tax_sample_texts(r) if (want_calibrate or count_via == "anthropic") else None
+        # Full-tree Anthropic is out of v1: --count-via anthropic on --kosten means calibrate.
+        use_calibrate = want_calibrate or count_via == "anthropic"
+        try:
+            estimate, tok_label, ratio = make_estimator(
+                "local",
+                model=rates["model"],
+                calibrate=use_calibrate,
+                calibrate_samples=samples,
+            )
+        except Exception as e:
+            print(f"sow-lint --kosten: estimator failed: {e}", file=sys.stderr)
+            return 2
+        K = kosten(r, want_kosten or None, estimate=estimate)
+        W = waste_report(r, want_kosten or None, estimate=estimate)
+        artifact = K["fixed_total"] + K["corpus_total"] + K["ruling_tokens"]
+        usd = usd_for_input_tokens(artifact, rates)
+        payload = {
+            "kind": "kosten",
+            "tokenizer": tok_label,
+            "calibrate_ratio": ratio,
+            "model": rates["model"],
+            "as_of": rates["as_of"],
+            "source": rates["source"],
+            "fixed": K["fixed"],
+            "fixed_total": K["fixed_total"],
+            "corpus_total": K["corpus_total"],
+            "ruling_tokens": K["ruling_tokens"],
+            "artifact_tokens": artifact,
+            "usd": usd,
+            "waste": W,
+            "honesty": "ESTIMATE tokens x DERIVED USD (input rate); session tokens not included",
+        }
+        if want_json:
+            import json as _json
+
+            print(_json.dumps(payload, indent=2, default=str))
+            return 0
+        print(f"  KOSTENRECHNUNG (ESTIMATE — {tok_label})")
+        print(f"  rates: model={rates['model']} as_of={rates['as_of']}  {format_usd(usd)} DERIVED for ~{artifact} artifact tokens (input-only)")
+        print("  --- TAX: paid by EVERY session of EVERY stream. MINIMISE HARD (s12) ---")
+        for name, tok in sorted(K["fixed"].items(), key=lambda x: -x[1])[:6]:
+            print("    {:<44} ~{:>6}".format(name, tok))
+        print("    {:<44} ~{:>6}".format("TOTAL", K["fixed_total"]))
+        print("  --- ARTIFACT ---")
+        print("    SOWs ~{}   rulings ~{}".format(K["corpus_total"], K["ruling_tokens"]))
+        wt = sum(x["tokens"] for x in W)
+        print(
+            "  --- WASTE: {} rev(s), ~{} tok ({:.1f}% of SOW tokens). MINIMISE ---".format(
+                len(W), wt, 100.0 * wt / max(K["corpus_total"], 1)
+            )
+        )
+        for x in sorted(W, key=lambda x: -x["tokens"])[:5]:
+            print("    {:<20} n{:<4} ~{:>6}  {}".format(x["stream"], x["n"], x["tokens"], ",".join(x["kinds"])))
+        print("  INVESTMENT - recon, checks, reading the source - is NOT minimised (doctrine).")
+        print("  NO TOKEN TARGET IS EVER SET ON A STREAM. A SELF-CORRECTION IS NEVER WASTE.")
+        print("  SESSION tokens: use sow-lint --session-cost (transcript / session-costs.jsonl).")
+        return 0
+
+    if want_repo_cost is not None:
+        root = pathlib.Path(want_repo_cost).resolve() if want_repo_cost else pathlib.Path.cwd().resolve()
+        if not root.exists():
+            print(f"sow-lint --repo-cost: path not found: {root}", file=sys.stderr)
+            return 2
+        if count_via not in ("local", "anthropic"):
+            print(f"sow-lint --count-via: expected local|anthropic, got {count_via!r}", file=sys.stderr)
+            return 2
+        try:
+            rates = get_model_rates(model_tag)
+        except UnknownModelError as e:
+            print(f"sow-lint --repo-cost: {e}", file=sys.stderr)
+            return 2
+        calibrate = want_calibrate or count_via == "anthropic"
+        samples = None
+        if calibrate:
+            # Prefer corpus fixed-tax samples if this path is (or contains) a corpus;
+            # else take the first few text files as calibration samples.
+            corp = _discover_root(str(root))
+            if corp is not None:
+                samples = fixed_tax_sample_texts(corp)
+            if not samples:
+                from .cost import iter_repo_text_files
+
+                files = iter_repo_text_files(root)[:5]
+                samples = []
+                for f in files:
+                    try:
+                        samples.append(f.read_text(encoding="utf-8", errors="replace")[:8000])
+                    except OSError:
+                        pass
+        try:
+            estimate, tok_label, ratio = make_estimator(
+                "local",
+                model=rates["model"],
+                calibrate=calibrate,
+                calibrate_samples=samples,
+            )
+        except Exception as e:
+            print(f"sow-lint --repo-cost: estimator failed: {e}", file=sys.stderr)
+            return 2
+        report = repo_token_report(root, estimate=estimate, model=rates["model"])
+        report["tokenizer"] = tok_label
+        report["calibrate_ratio"] = ratio
+        if want_json:
+            import json as _json
+
+            print(_json.dumps(report, indent=2, default=str))
+            return 0
+        print(f"  REPO-COST (ESTIMATE — {tok_label})")
+        print(f"  root: {report['root']}")
+        print(
+            "  files={}  tokens~{}  DERIVED {}  model={} as_of={}".format(
+                report["files"],
+                report["tokens"],
+                format_usd(report["usd"]),
+                report["model"],
+                report["as_of"],
+            )
+        )
+        print(f"  ({report['honesty']})")
+        if report["top"]:
+            print("  --- heaviest paths ---")
+            for row in report["top"][:10]:
+                print("    ~{:>8}  {}".format(row["tokens"], row["path"]))
+        return 0
+
+    if want_session_cost:
+        tpath = transcript_path
+        clog = cost_log_path
+        if tpath is None and clog is None:
+            r = _discover_root(positional[0] if positional else None)
+            if r is not None:
+                default_log = pathlib.Path(r) / "tools" / "stream-instruments" / "session-costs.jsonl"
+                if default_log.is_file():
+                    clog = str(default_log)
+            if tpath is None and clog is None:
+                print(
+                    "sow-lint --session-cost: pass --transcript PATH or --cost-log PATH "
+                    "(or run inside a corpus with tools/stream-instruments/session-costs.jsonl)",
+                    file=sys.stderr,
+                )
+                return 2
+        try:
+            if model_tag is not None:
+                get_model_rates(model_tag)  # fail closed early
+            report = session_cost_report(transcript=tpath, cost_log=clog, model=model_tag)
+        except UnknownModelError as e:
+            print(f"sow-lint --session-cost: {e}", file=sys.stderr)
+            return 2
+        except Exception as e:
+            print(f"sow-lint --session-cost: {e}", file=sys.stderr)
+            return 2
+        if append_cost_log_path:
+            try:
+                append_session_cost_log(append_cost_log_path, report)
+            except Exception as e:
+                print(f"sow-lint --session-cost: append-cost-log failed: {e}", file=sys.stderr)
+                return 2
+        if want_json:
+            import json as _json
+
+            print(_json.dumps(report, indent=2, default=str))
+            return 0
+        print("  SESSION-COST (usage from {} × DERIVED USD)".format(report["usage_source"]))
+        print(f"  path: {report['path']}")
+        print(
+            "  in={} out={} cache_r={} cache_w={}  events={}".format(
+                report["input_tokens"],
+                report["output_tokens"],
+                report["cache_read_tokens"],
+                report["cache_write_tokens"],
+                report["events"],
+            )
+        )
+        print(
+            "  DERIVED {}  model={} as_of={}".format(
+                format_usd(report["usd"]),
+                report["model"],
+                report["as_of"],
+            )
+        )
+        if report.get("logged_usd"):
+            print(f"  (cost-log also carried logged_usd sum={format_usd(float(report['logged_usd']))})")
+        print(f"  ({report['honesty']})")
+        return 0
+
+    if want_sollist is not None:
+        r = _discover_root(positional[0] if positional else None)
+        if r is None:
+            print("cadence --soll-ist: run from inside the corpus", file=sys.stderr)
+            return 2
+        rows = soll_ist(r, want_sollist or None)
+        if not rows:
+            print("  no rev PAIR carries next_three_acts - SOLL is undeclared, so no")
+            print("  variance is computable. That absence IS the finding.")
+            return 0
+        var = [x for x in rows if x["verdict"] != "AS-PLANNED"]
+        unstated = [x for x in var if x["unstated"]]
+        print(
+            "  SOLL/IST-VERGLEICH: {} comparison(s), {} variance(s), {} UNSTATED".format(
+                len(rows), len(var), len(unstated)
+            )
+        )
+        for x in rows:
+            tag = x["abweichung"] or ("UNSTATED" if x["unstated"] else "-")
+            print(
+                "  {}/{}  n{}->n{}  {}/{} planned acts done  {}  [{}]".format(
+                    x["project"],
+                    x["stream"],
+                    x["from_n"],
+                    x["to_n"],
+                    x["done"],
+                    x["of"],
+                    x["verdict"],
+                    tag,
+                )
+            )
+            for act, hit in zip(x["soll"], x["matched"]):
+                print("      {} {}".format("DONE " if hit else "NOT  ", act[:88]))
+        if unstated:
+            print("  An UNSTATED variance is invisible drift. Name an abweichung: from")
+            print("  SCOPE-CHANGED | ESTIMATE-WRONG | BLOCKED-EXTERNAL | DISCOVERED-WORK")
+        return 0
+
+    if want_progress is not None:
+        r = _discover_root(positional[0] if positional else None)
+        if r is None:
+            print("sow-lint --progress: run from inside the corpus", file=sys.stderr)
+            return 2
+        rows = stream_progress(r, want_progress or None)
+        rows.sort(key=lambda x: (x["resting"], -x["idle"]))
+        live = [x for x in rows if not x["resting"]]
+        stale = [x for x in live if x["idle"] > 7]
+        nodw = [x for x in rows if not x["done_when"]]
+        print("  {} stream(s), {} not at rest, {} of those IDLE >7d".format(len(rows), len(live), len(stale)))
+        print("  {:<24}{:>6}{:>5}{:>9}{:>7}  {}".format("stream", "files", "n", "rate/d", "idle", "status"))
+        for x in rows:
+            flag = "  <-- IDLE, not resting" if (not x["resting"] and x["idle"] > 7) else ""
+            print(
+                "  {:<24}{:>6}{:>5}{:>9}{:>7}  {}{}".format(
+                    x["stream"],
+                    x["files"],
+                    x["n"],
+                    x["rate"],
+                    x["idle"],
+                    x["status"],
+                    flag,
+                )
+            )
+            if x["done_when"]:
+                print("      done_when: {}".format(x["done_when"]))
+        print(
+            "  {} of {} declare NO done_when - distance to done is UNMEASURABLE for those".format(len(nodw), len(rows))
+        )
+        return 0
+
+    if locate_stream_name:
+        r = _discover_root(positional[0] if positional else None)
+        if r is None:
+            print(
+                "sow-lint --locate: run from inside the corpus, or pass its path",
+                file=sys.stderr,
+            )
+            return 2
+        # doctrine: locate_stream is zero-git pathlib (correct - see its own
+        # docstring), but "disk" is a CHECKOUT and a booting seat's question about
+        # "what's my next n:" is usually a question about the TRUNK. Name which one
+        # this answer came from, before the answer itself, every invocation.
+        print(f"  {format_ref_disclosure(git_ref_state(r))}")
+        L = locate_stream(r, locate_stream_name)
+        if L["ambiguous"]:
+            print(
+                f"  AMBIGUOUS: {len(L['candidates'])} dirs named "
+                f"{locate_stream_name!r} - a human rules this, not the tool:"
+            )
+            for c in L["candidates"]:
+                print(f"    {c}")
+            return 1
+        if not L["chain_dir"]:
+            print(
+                f"  NO CHAIN DIR named {locate_stream_name!r} under any "
+                f"<project>/sow/. A new stream files its first SOW to create one."
+            )
+            return 1
+        print(f"  stream      {L['stream']}")
+        print(f"  project     {L['project']}")
+        print(f"  chain dir   {L['chain_dir']}")
+        print(f"  files       {L['files']}")
+        if L["latest"]:
+            x = L["latest"]
+            print(f"  latest      {x['file']}")
+            print(
+                f"              n:{x['n']} rev:{x['rev']} "
+                f"status:{x['status']}" + (f" seat:{x['seat']}" if x["seat"] else "")
+            )
+            print(f"  YOUR NEXT   n: {L['next_n']}   supersedes: {x['n']}")
+        else:
+            print("  latest      none carry an integer n: - walk the chain by hand")
+        print(f"  sow: field  {', '.join(L['declared_sow']) or '(none declared)'}")
+        print(f"  diary       {L['diary'] or '(absent - create on first paid lesson)'}")
+        print("  NOTE: derived from disk. A spawn message that disagrees with this is WRONG.")
+        return 0
+
+    if repair_project:
+        r = corpus_root(repair_project) or pathlib.Path(repair_project)
+        P = project_repair_plan(r)
+        print(f"  known projects: {', '.join(P['known_projects'])}")
+        print(f"  REPAIRABLE ({len(P['repair'])}) - declared value is not a project:")
+        for x in P["repair"]:
+            print(f"    {x['file']}")
+            print(f"      project: {x['declared']} -> {x['derived']}  ({x['why']})")
+        print(f"  ESCALATE ({len(P['escalate'])}) - NOT rewritten:")
+        for x in P["escalate"]:
+            print(f"    {x['file']}")
+            print(f"      declared:{x['declared']} derived:{x['derived']} - {x['why']}")
+        print(f"  MISSING ({len(P['missing'])}) - with reasons:")
+        for x in P["missing"][:12]:
+            print(f"    {x['file']}  ({x['why']})")
+        if apply_flag and P["repair"]:
+            done = 0
+            for x in P["repair"]:
+                f = pathlib.Path(r) / x["file"]
+                txt = f.read_text(encoding="utf-8", errors="replace")
+                L = txt.splitlines(keepends=True)
+                idx = [j for j, l in enumerate(L) if l.startswith("project:")]
+                if len(idx) != 1:
+                    print(f"    REFUSED {x['file']}: {len(idx)} project: lines")
+                    continue
+                L[idx[0]] = f"project: {x['derived']}\n"
+                cand = "".join(L)
+                fm2 = extract_frontmatter(cand)
+                if not (isinstance(fm2, dict) and fm2.get("project") == x["derived"]):
+                    print(f"    REFUSED {x['file']}: parse-verify failed")
+                    continue
+                if cand.split("---", 2)[-1] != txt.split("---", 2)[-1]:
+                    print(f"    REFUSED {x['file']}: BODY CHANGED")
+                    continue
+                f.write_text(cand, encoding="utf-8")
+                done += 1
+            print(f"APPLIED: {done} repaired. ESCALATE untouched. NOT COMMITTED.")
+            return 0
+        print("REPAIR-PLAN: DRY-RUN ONLY - nothing written. Add --apply for the REPAIRABLE class only.")
+        return 0
+
+    if backfill_project:
+        r = corpus_root(backfill_project) or pathlib.Path(backfill_project)
+        print(f"  corpus root: {r}")
+        plan = project_backfill_plan(r)
+        by = {}
+        for row in plan["rows"]:
+            by.setdefault(row["project"], []).append(row)
+        for proj in sorted(by):
+            print(f"  {proj}: {len(by[proj])} file(s) would gain project: {proj}")
+            for row in by[proj][:5]:
+                print(f"    {row['file']}")
+            if len(by[proj]) > 5:
+                print(f"    ... and {len(by[proj]) - 5} more")
+        if plan["unresolved"]:
+            print(f"  UNRESOLVED ({len(plan['unresolved'])}) - path yields no project, NOT guessed:")
+            for u in plan["unresolved"][:5]:
+                print(f"    {u['file']}")
+        if apply_flag:
+            res = project_backfill_apply(r, plan["rows"], limit=limit_n)
+            for fl in res["failed"]:
+                print(f"    FAILED {fl['file']}: {fl['why']}")
+            print(
+                f"APPLIED: {len(res['written'])} written, {len(res['skipped'])} "
+                f"already had it, {len(res['failed'])} refused. "
+                f"NOT COMMITTED - read `git diff` before committing."
+            )
+            return 1 if res["failed"] else 0
+        print(
+            f"BACKFILL-PLAN: {len(plan['rows'])} file(s) repairable, "
+            f"{len(plan['unresolved'])} unresolved. DRY-RUN ONLY - nothing written."
+        )
+        return 0
+
+    if resync_apply_upstream:
+        tgt = positional[0] if positional else "."
+        try:
+            results = resync_apply(tgt, resync_apply_upstream)
+        except Exception as e:
+            print(f"sow-lint --resync-apply: {e}", file=sys.stderr)
+            return 2
+        written = [r for r in results if r["action"] == "WRITTEN"]
+        skipped = [r for r in results if r["action"] == "SKIP"]
+        missing = [r for r in results if r["action"] == "MISSING-UPSTREAM"]
+        for r in results:
+            sha = (r.get("sha") or "")[:8]
+            extra = f" sha={sha}" if sha else ""
+            why = f"  ({r['why']})" if r.get("why") else ""
+            print(f"  {r['path']:<44} {r['action']}{extra}{why}")
+        print(
+            f"RESYNC-APPLY: {len(written)} written, {len(skipped)} skipped (local), "
+            f"{len(missing)} missing-upstream. NOT COMMITTED."
+        )
+        if skipped:
+            print(
+                "  REPORTED, not re-derived: "
+                + ", ".join(r["path"] for r in skipped)
+            )
+        return 0
+
+    if resync_upstream:
+        tgt = positional[0] if positional else "."
+        rows = resync_check(tgt, resync_upstream)
+        stale = [r for r in rows if r[1] in ("STALE", "MISSING-TARGET")]
+        for relp, verdict, rec, cur in rows:
+            extra = ""
+            if verdict == "STALE" and rec and cur:
+                extra = f"  recorded={rec[:8]} upstream={cur[:8]}"
+            elif verdict == "MISSING-TARGET" and cur:
+                extra = f"  upstream={cur[:8]}"
+            elif verdict == "MISSING-UPSTREAM" and rec:
+                extra = f"  recorded={rec[:8]}"
+            print(f"  {relp:<44} {verdict}{extra}")
+        print(f"RESYNC-CHECK: {len(rows)} doctrine files, {len(stale)} STALE")
+        # example-stream-CHARTER-03 item 6: a directory upstream not covered by this walk is named,
+        # not silently absent - so a clean run cannot be mistaken for "everything upstream
+        # is covered." Advisory only: NOT graded, NOT counted toward the exit code, because
+        # a genuine content genre (projects/, ruling/, learnings/) belongs here too and
+        # that is correct, not a defect (see unwatched_genres' own docstring).
+        unwatched = unwatched_genres(resync_upstream)
+        if unwatched:
+            print(
+                f"UNWATCHED (upstream has .md content here; this check does not walk it - "
+                f"human judgement, not auto-graded): {', '.join(unwatched)}"
+            )
+        return 1 if stale else 0
+
+    if promote_dir:
+        root = _discover_root(positional[0] if positional else promote_dir)
+        if root is None:
+            print("sow-lint --promote: couldn't find the repo root", file=sys.stderr)
+            return 2
+        root = corpus_root(promote_dir) or root
+        plan = promote_plan(root, promote_dir)
+        for row in plan["rows"]:
+            print(f"  n={row['n']:<4} {pathlib.Path(row['src']).name}")
+            print(f"         -> {row['target']}   predecessor={row['predecessor']}")
+        if plan.get("excluded"):
+            print(f"  EXCLUDED ({len(plan['excluded'])}) - not SOWs, so not renamed:")
+            for e in plan["excluded"]:
+                print(f"    {e['file']}  ({e['why']})")
+        if plan.get("assigned"):
+            print(
+                f"  n ASSIGNED to {len(plan['assigned'])} file(s) with no declared n; "
+                f"{len(plan.get('preserved', []))} kept their existing n"
+            )
+        if plan["untracked"]:
+            print(f"  UNTRACKED ({len(plan['untracked'])}) - git has no birth for these:")
+            for u in plan["untracked"]:
+                print(f"    {u}")
+        renames = [r for r in plan["rows"] if r.get("rename")]
+        keeps = [r for r in plan["rows"] if not r.get("rename")]
+        print(
+            f"  KEEPING their names ({len(keeps)}): already grade - "
+            f"a rename would touch landed records for cosmetic conformance"
+        )
+        rmap = {pathlib.Path(r["src"]).name: r["target"] for r in renames}
+        scan_root = corpus_root(promote_dir) or root
+        chits = citation_scan(scan_root, rmap)
+        nfiles, nrefs = citation_totals(chits)
+        print(f"  citation scan root: {scan_root}")
+        print(f"  CITATION IMPACT: {nrefs} reference(s) in {nfiles} file(s) would need rewriting")
+        for cf, entries in list(chits.items())[:10]:
+            tot = sum(e["with_ext"] + e["stem_only"] for e in entries)
+            print(f"    {cf}  ({tot})")
+        if len(chits) > 10:
+            print(f"    ... and {len(chits) - 10} more file(s)")
+        if plan["collisions"]:
+            print(f"REFUSED: {len(plan['collisions'])} collision(s) - --promote never resolves one,")
+            print("         because a naive rename would OVERWRITE LANDED HISTORY (doctrine):")
+            for tgt, srcs in plan["collisions"].items():
+                print(f"    {tgt}  <-  {', '.join(srcs)}")
+            return 1
+        if apply_flag:
+            res = promote_apply(root, plan["rows"], limit=limit_n)
+            for d in res["renamed"]:
+                print(f"    RENAMED n={d['n']}  {d['from'].split(chr(47))[-1]} -> {d['to']}")
+            for fl in res["failed"]:
+                print(f"    FAILED {fl['file']}: {fl['why']}")
+            print(
+                f"APPLIED: {len(res['renamed'])} renamed, {len(res['skipped'])} kept, "
+                f"{len(res['failed'])} refused. Citations NOT rewritten - legacy_name is "
+                f"the bridge (doctrine). NOT COMMITTED."
+            )
+            return 1 if res["failed"] else 0
+        print(f"PROMOTE-PLAN: {len(plan['rows'])} file(s), 0 collisions. DRY-RUN ONLY - nothing was written.")
+        return 0
+
+    if want_incarnation:
+        # doctrine: the session marker a SOW records in its FIRST filing.
+        # PAID (example-stream doctrine): the skill has instructed every stream
+        # to run this since the stand-down ruling and the verb did not exist -
+        # the seat correctly OMITTED the field rather than invent a value.
+        import secrets
+
+        print(secrets.token_hex(4))
+        return 0
+
+    if migrate_check_path:
+        return migrate_check_render(migrate_check_path)
+    # --migrate takes a FILE like --migrate-check; dispatch before the root guard
+    # (the diag fall-through that made a flag unreachable).
+    if migrate_path:
+        from .migrate import migrate_render
+
+        return migrate_render(migrate_path, model_tag)
+    if (
+        board
+        or inbox_stream
+        or triage
+        or commit_check_corpus
+        or ruling_index
+        or mint_kind
+        or stream_index
+        or want_digest
+    ):
+        root = _discover_root(positional[0] if positional else None)
+        if root is None:
+            print(
+                "zeo: couldn't find a corpus. Run from inside one, pass its path, or set ZEO_SOWS_ROOT.\n"
+                "  marker: claude-md/CLAUDE.md at the corpus root.\n"
+                "  example: zeo --board /path/to/corpus\n"
+                "  example: ZEO_SOWS_ROOT=/path/to/corpus zeo --board",
+                file=sys.stderr,
+            )
+            return 2
+    else:
+        # lint mode still needs an explicit target (a file or dir to lint)
+        if len(positional) != 1:
+            print(_USAGE, file=sys.stderr)
+            return 2
+        target = pathlib.Path(positional[0])
+        if not target.exists():
+            print(f"sow-lint: path does not exist: {target}", file=sys.stderr)
+            return 2
+        # THE BUG (diag/346): a single-FILE target set root=the file, so
+        # project_of(path, root) returned None and every project_of-gated ERROR
+        # (check_status, check_n canonical path) silently DOWNGRADED to WARN — bad SOWs
+        # graded "passed". _discover_root returns its arg verbatim (never walks up), so it
+        # could not fix this. find_canonical_claude_md DOES walk up to claude-md/CLAUDE.md;
+        # the repo root is that marker's grandparent. TARGET = what to lint; ROOT = repo.
+        _canon = find_canonical_claude_md(target)
+        root = _canon.parent.parent if _canon is not None else (target if target.is_dir() else target.parent)
+
+    if triage:
+        return _triage(root)
+    if board:
+        return _board(root)
+    if commit_check_corpus:
+        return _commit_check_corpus(root)
+    if ruling_index:
+        return _ruling_index(root)
+    if mint_kind:
+        return _mint(root, mint_kind, mint_stream, words=mint_words)
+    if stream_index:
+        return _stream_index_cmd(root)
+    if want_digest:
+        return _digest(root, digest_since)
+    if inbox_stream:
+        return _inbox(root, inbox_stream)
+
+    canon = pathlib.Path(claude_md_override) if claude_md_override else find_canonical_claude_md(root)
+    current_rev = None
+    if canon and canon.is_file():
+        current_rev = parse_current_rev(canon.read_text(encoding="utf-8", errors="replace"))
+
+    rev_note = f"canonical Rev {current_rev}" if current_rev is not None else "canonical Rev UNKNOWN"
+    print(f"=== sow-lint {_version()} · {rev_note} ===")
+
+    # Fold 1: governance-docs-first — grade the currency-enforcer (the skill) BEFORE the corpus.
+    gov_errs = 0
+    skills = [pathlib.Path(skill_path)] if skill_path else find_authoring_skills(root)
+    if skills:
+        print("\nGOVERNANCE (graded first — the currency-enforcer):")
+    for sp in skills:
+        if not sp.is_file():
+            print(f"    {_SYM[ERROR]} [skill-missing] skill not found: {sp}")
+            gov_errs += 1
+        else:
+            sfindings = check_skill_staleness(sp.read_text(encoding="utf-8", errors="replace"), current_rev)
+            if not sfindings:
+                print(f"    ✓ {sp.name} current at Rev {current_rev}")
+            for f in sfindings:
+                print(f"    {_SYM.get(f.severity, '?')} [{f.code}] {f.message}")
+                if f.severity == ERROR:
+                    gov_errs += 1
+
+    files = list(iter_sow_files(target))  # WHAT to lint (file or dir)
+    per_file: dict = {}
+    has_fm: dict = {}
+    status_of: dict = {}
+    fm_of: dict = {}
+    files_fm = []
+    # Built ONCE corpus-wide (root, not target — a single-file lint still needs the whole
+    # corpus to resolve a requested_by citation against). doctrine's replacement for
+    # the `"known_stems" in dir()` dead code that recomputed this per ruling file.
+    _known_stems = {pathlib.Path(f).stem for f in iter_sow_files(pathlib.Path(root))}
+    _sow_index = build_sow_n_index(root)
+    for path in files:
+        text = path.read_text(encoding="utf-8", errors="replace")
+        fm = extract_frontmatter(text)
+        status, findings = lint_file(
+            path,
+            current_rev=current_rev,
+            root=root,
+            commit_mode=commit_check,
+            known_stems=_known_stems,
+            sow_index=_sow_index,
+        )
+        per_file[path] = list(findings)
+        status_of[path] = status
+        has_fm[path] = status != "SKIP"
+        fm_of[path] = fm
+        if isinstance(fm, dict):
+            files_fm.append((path, fm))
+    for path, extra in check_corpus(files_fm, root=root).items():
+        per_file.setdefault(path, []).extend(extra)
+    # doctrine: check_ruling_corpus (ruling-collision) was DEFINED, TESTED, and
+    # NEVER CALLED from anywhere in this file - not from --commit-check (expected, a
+    # per-file target's files_fm has one entry and a collision needs two), but not from
+    # an ordinary FULL CORPUS run either. MEASURED before this line existed: a synthetic
+    # two-file same-NNN fixture linted with the plain `sow-lint <dir>` (no --commit-check)
+    # reported "2 passed - 0 failed", the collision completely invisible, which is a
+    # stronger defect than doctrine's own diagnosis named (it attributed the miss only
+    # to the per-file commit gate). Wiring it in here fixes reachability for any run that
+    # sees the whole ruling namespace at once; the commit-path blindness for a SINGLE
+    # staged file is separate and is what --commit-check-corpus below exists to close.
+    for path, extra in check_ruling_corpus(files_fm).items():
+        per_file.setdefault(path, []).extend(extra)
+    # doctrine (binds resolve through stream-index.md) and doctrine (a ruling
+    # naming an asking SOW whose resolved_by does not cite it back) - both corpus-level,
+    # both built on the SAME index/known_stems computed above, never rebuilt per file.
+    _index = build_stream_index(root)
+    _stem_index = build_stem_index(root)
+    for path, extra in check_binds_corpus(files_fm, root, commit_mode=commit_check, index=_index).items():
+        per_file.setdefault(path, []).extend(extra)
+    for path, extra in check_ruling_receipts(
+        files_fm,
+        root,
+        commit_mode=commit_check,
+        sow_index=_sow_index,
+        stem_index=_stem_index,
+    ).items():
+        per_file.setdefault(path, []).extend(extra)
+
+    # doctrine item 1: `n_skip` used to aggregate three causally different
+    # outcomes under ONE hardcoded label ("no frontmatter"), which was simply false
+    # for two of the three — a file with eight frontmatter fields reported as having
+    # none. Each SKIP branch in lint_file() is distinguished here by the same signal
+    # lint_file itself used to choose it (fm is None / a genre-unknown finding / a
+    # preschema-block finding / neither, i.e. a deliberate _SKIP_GENRES match) — never
+    # re-guessed. Conformance rule (binding): a summary line NAMES THE CAUSE of every
+    # count it prints, or prints no cause at all; a zero-valued cause prints nothing.
+    n_pass = n_fail = n_cannot = 0
+    n_skip_nofm = n_skip_genre = n_skip_preschema = n_skip_deliberate = 0
+    fails, warns, hints, cannot, skip_warns = [], [], [], [], []
+    for path in files:
+        if not has_fm.get(path, False):
+            findings = per_file.get(path, [])
+            codes = {f.code for f in findings}
+            if "genre-unknown" in codes:
+                # doctrine item 2: this WARN is manufactured by lint_file (the
+                # open-world genre default, core.py:466-479) and was previously
+                # discarded here — computed and never shown. Surface it.
+                n_skip_genre += 1
+                skip_warns.append((path, findings))
+            elif "preschema-block" in codes:
+                n_skip_preschema += 1
+                skip_warns.append((path, findings))
+            elif fm_of.get(path) is None:
+                n_skip_nofm += 1
+            else:
+                # fm parsed to a schema-shaped dict but genre is a deliberate
+                # _SKIP_GENRES match (relay) — lint_file returns SKIP with no
+                # findings. Learnings are graded now (no longer deliberate skip).
+                n_skip_deliberate += 1
+            continue
+        findings = per_file.get(path, [])
+        errs = [f for f in findings if f.severity == ERROR]
+        wrn = [f for f in findings if f.severity == WARN]
+        hnt = [f for f in findings if f.severity == HINT]
+        # bucket on lint_file's AUTHORITATIVE verdict, never a re-derived 2-way one
+        # (the CLI/lint_file disagreement class — diag). check_corpus may have
+        # ADDED an ERROR post-hoc, so a corpus-error still escalates to FAIL.
+        st = status_of.get(path, "PASS")
+        if errs:
+            n_fail += 1
+            fails.append((path, errs + wrn + hnt))
+        elif st == "CANNOT-GRADE":
+            n_cannot += 1
+            cannot.append((path, wrn + hnt))  # instrument blind, NOT file-bad
+        else:
+            n_pass += 1
+            if wrn:
+                warns.append((path, wrn + hnt))
+            elif hnt:
+                hints.append((path, hnt))
+
+    for path, fs in cannot:
+        print(f"\nCANNOT-GRADE (instrument could not resolve this file — NOT a pass): {path}")
+        for f in fs:
+            print(f"    {_SYM.get(f.severity, '?')} [{f.code}] {f.message}")
+    for path, fs in fails:
+        print(f"\nFAIL: {path}")
+        for f in fs:
+            print(f"    {_SYM.get(f.severity, '?')} [{f.code}] {f.message}")
+    for path, fs in warns:
+        print(f"\nWARN: {path}")
+        for f in fs:
+            print(f"    {_SYM.get(f.severity, '?')} [{f.code}] {f.message}")
+    for path, fs in hints:
+        print(f"\nHINT: {path}")
+        for f in fs:
+            print(f"    {_SYM.get(f.severity, '?')} [{f.code}] {f.message}")
+    # doctrine item 2: the SKIP-with-a-WARN cases (genre-unknown, preschema-block)
+    # carry a diagnosis lint_file already computed — render it, same as any other WARN,
+    # unless --quiet asked for the count without the noise (a corpus-wide run can be many
+    # lines; example-stream makes that a stated flag, not a silent decision to keep discarding it).
+    if not quiet:
+        for path, fs in skip_warns:
+            print(f"\nSKIP (not graded — cause below): {path}")
+            for f in fs:
+                print(f"    {_SYM.get(f.severity, '?')} [{f.code}] {f.message}")
+    skip_parts = []
+    if n_skip_nofm:
+        skip_parts.append(f"{n_skip_nofm} skipped (no frontmatter)")
+    if n_skip_preschema:
+        skip_parts.append(f"{n_skip_preschema} skipped (pre-schema block)")
+    if n_skip_deliberate:
+        skip_parts.append(f"{n_skip_deliberate} skipped (deliberate)")
+    if n_skip_genre:
+        skip_parts.append(f"{n_skip_genre} skipped (genre not graded)")
+    skip_str = (" · " + " · ".join(skip_parts)) if skip_parts else ""
+    print(
+        f"\n{n_pass} passed · {n_fail} failed · {n_cannot} cannot-grade{skip_str}"
+        + (f" · governance errors: {gov_errs}" if skill_path else "")
+    )
+    return 1 if (n_fail or n_cannot or gov_errs) else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

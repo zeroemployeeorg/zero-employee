@@ -1,0 +1,22 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+uv.lock.bak
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Local / private
+.env
+*.pem
+.agents/
+.claude/
