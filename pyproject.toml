@@ -1,7 +1,7 @@
 [project]
 name = "zero-employee"
 version = "0.1.0"
-description = "A portable linter for Statement-of-Work (SOW) documents — validates the CLAUDE.md §14 keystone rule."
+description = "Open-source tools and infrastructure for building Zero Employee Organizations powered by AI agents."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = ["pyyaml>=6.0", "pydantic>=2.0", "tiktoken>=0.7"]
