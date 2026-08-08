@@ -458,9 +458,7 @@ def check_status(path, fm, root):
 
     project_known = project_of(path, root) is not None
     return [
-        f
-        for f in grade_sow(fm, project_known=project_known)
-        if f.code in ("status-enum", "status-enum-premigration")
+        f for f in grade_sow(fm, project_known=project_known) if f.code in ("status-enum", "status-enum-premigration")
     ]
 
 
@@ -588,9 +586,7 @@ def lint_file(
         ]
     from .schemas import grade_sow
 
-    project_known = project_of(path, root) is not None if root is not None else (
-        project_of(path) is not None
-    )
+    project_known = project_of(path, root) is not None if root is not None else (project_of(path) is not None)
     path_canonical = bool(_SOW_FILE_RE.match(pathlib.Path(path).name))
     findings = grade_sow(
         fm,
@@ -2439,7 +2435,7 @@ def reserve_sow_stub(
             f"created: {today}\n"
             f"updated: {today}\n"
             f"genre: sow\n"
-            f"done_when: \"REPLACE — runnable stopping predicate\"\n"
+            f'done_when: "REPLACE — runnable stopping predicate"\n'
             f"restaufwand: 1\n"
             f"sow_repo: example-org/org\n"
             f"work_repo: same-as-sow_repo\n"
@@ -2484,7 +2480,7 @@ def reserve_ruling_stub(
         body = (
             f"---\n"
             f"ruling: {candidate}\n"
-            f"title: \"{slug.replace('-', ' ')}\"\n"
+            f'title: "{slug.replace("-", " ")}"\n'
             f"authority: master\n"
             f"scope: org\n"
             f"status: ACTIVE\n"
@@ -2638,7 +2634,7 @@ ABWEICHUNG_CODES = (
 # is kept here as the public constant CLI banners historically referenced; the estimator itself
 # is ESTIMATE and labelled as one everywhere it surfaces. Claude's tokenizer is not public;
 # Anthropic documents that third-party tokenizers mis-estimate Claude.
-from .cost import CHARS_PER_TOKEN, estimate_tokens_local  # noqa: E402
+from .cost import estimate_tokens_local  # noqa: E402
 
 
 def est_tokens(text) -> int:

@@ -7,10 +7,10 @@ Self-contained: does not touch doctrine --resync-* machinery or product seats
 from __future__ import annotations
 
 import datetime as _dt
-import importlib.resources as resources
 import pathlib
 import re
-from typing import Iterable
+from collections.abc import Iterable
+from importlib import resources
 
 _IMPORT_RE = re.compile(r"""^\s*@import\s+["']([^"']+)["']\s*$""")
 _MAX_IMPORT_DEPTH = 16
@@ -22,7 +22,7 @@ def _templates_dir() -> pathlib.Path:
     try:
         root = resources.files("zero_employee").joinpath("scaffold_templates")
         return pathlib.Path(str(root))
-    except Exception:
+    except (ModuleNotFoundError, FileNotFoundError, TypeError, AttributeError, OSError):
         return pathlib.Path(__file__).parent / "scaffold_templates"
 
 
@@ -76,9 +76,7 @@ def resolve_imports(
     out: list[str] = []
     next_stack = stack | {path}
     for line in text.splitlines(keepends=True):
-        bare = line[:-1] if line.endswith("\n") else line
-        if bare.endswith("\r"):
-            bare = bare[:-1]
+        bare = line.removesuffix("\n").removesuffix("\r")
         m = _IMPORT_RE.match(bare)
         if not m:
             out.append(line)
@@ -208,9 +206,7 @@ def scaffold_project_stream(
     """Create projects/<project>/CLAUDE.md + Rev-17 SOW; optional bridges on project dir."""
     root = pathlib.Path(root).resolve()
     if not (root / "claude-md" / "CLAUDE.md").is_file():
-        raise FileNotFoundError(
-            f"corpus marker missing under {root}: run `zeo init` first (need claude-md/CLAUDE.md)"
-        )
+        raise FileNotFoundError(f"corpus marker missing under {root}: run `zeo init` first (need claude-md/CLAUDE.md)")
 
     proj_dir = root / "projects" / project_name
     sow_dir = proj_dir / "sow" / stream_name
@@ -223,7 +219,7 @@ def scaffold_project_stream(
         proj_claude.write_text(body, encoding="utf-8")
         created.append(str(proj_claude.relative_to(root)))
 
-    today = _dt.date.today().isoformat()
+    today = _dt.datetime.now(_dt.UTC).date().isoformat()
     slug = _slugify_title(title)
     filename = f"{stream_name}-SOW-{sow_num:02d}-{slug}.md"
     sow_file = sow_dir / filename
@@ -240,7 +236,7 @@ def scaffold_project_stream(
             f"created: {today}\n"
             f"updated: {today}\n"
             f"genre: sow\n"
-            f"done_when: \"Clear acceptance criteria established\"\n"
+            f'done_when: "Clear acceptance criteria established"\n'
             f"restaufwand: 1\n"
             f"sow_repo: example-org/org\n"
             f"work_repo: example-org/{project_name}\n"
@@ -254,11 +250,7 @@ def scaffold_project_stream(
         created.append(str(sow_file.relative_to(root)))
 
     tools_set = normalize_tools(tools)
-    bridges = (
-        install_bridges(proj_dir, tools_set)
-        if tools_set
-        else {"root": str(proj_dir), "tools": [], "actions": []}
-    )
+    bridges = install_bridges(proj_dir, tools_set) if tools_set else {"root": str(proj_dir), "tools": [], "actions": []}
     return {
         "root": str(root),
         "project": project_name,

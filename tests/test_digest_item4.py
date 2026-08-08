@@ -11,10 +11,20 @@ on the sibling repo at all and always run.
 import subprocess
 import shutil
 import pathlib
+import re
+import os
 import pytest
 from zero_employee import cli
 
-_ORG_REPO = pathlib.Path(__file__).resolve().parents[2] / "org"
+def _sibling_org_repo() -> pathlib.Path:
+    env = os.environ.get("ZEO_ORG_REPO", "").strip()
+    if env:
+        return pathlib.Path(env).expanduser().resolve()
+    # tests/ -> repo root -> sibling org/ (private monorepo layout)
+    return pathlib.Path(__file__).resolve().parents[2] / "org"
+
+
+_ORG_REPO = _sibling_org_repo()
 _REAL_SCRIPT = _ORG_REPO / "tools" / "hooks" / "zeo-digest.sh"
 _HAS_REAL_SCRIPT = _REAL_SCRIPT.is_file() and shutil.which("bash") is not None
 
@@ -182,13 +192,21 @@ def test_digest_matches_the_real_bash_script_on_the_same_commit_range(two_author
     bp, bo, bpost = _split_owed(bash_lines)
     pp, po, ppost = _split_owed(py_lines)
 
-    def _norm_uncosigned(line: str) -> str:
-        # Public package generalizes ruling citations to "doctrine"; the org bash
-        # script may still name a specific ruling — treat that one header as equivalent.
-        if "UNCOSIGNED ORG-SCOPE RULINGS" in line:
-            return "--- UNCOSIGNED ORG-SCOPE RULINGS ---"
-        return line
+    # Public package generalizes ruling citations to "doctrine"; the org bash
+    # script (and PATH zeo it shells out to for triage) may still name RULING-NNN.
+    # Normalize both sides so INTAKE / successor / DARK / UNCOSIGNED headers equate.
+    _ruling_cite = re.compile(
+        r"RULING-\d+(?:\s+s[\d.]+)?(?:\s+item\s+\d+)?|doctrine(?:\s+item\s+\d+)?"
+    )
 
-    assert [_norm_uncosigned(l) for l in bp] == [_norm_uncosigned(l) for l in pp]
-    assert [_norm_uncosigned(l) for l in bpost] == [_norm_uncosigned(l) for l in ppost]
-    assert [l.strip() for l in bo] == [l.strip() for l in po]
+    def _norm_ruling_cites(line: str) -> str:
+        if "UNCOSIGNED ORG-SCOPE RULINGS" in line:
+            # Parenthetical cite differs (RULING-021 vs doctrine); header identity is enough.
+            return "--- UNCOSIGNED ORG-SCOPE RULINGS ---"
+        return _ruling_cite.sub("doctrine", line)
+
+    assert [_norm_ruling_cites(l) for l in bp] == [_norm_ruling_cites(l) for l in pp]
+    assert [_norm_ruling_cites(l) for l in bpost] == [_norm_ruling_cites(l) for l in ppost]
+    assert [_norm_ruling_cites(l.strip()) for l in bo] == [
+        _norm_ruling_cites(l.strip()) for l in po
+    ]

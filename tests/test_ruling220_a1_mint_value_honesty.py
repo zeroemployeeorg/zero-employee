@@ -1,7 +1,7 @@
 """RULING-220 AMENDMENT A1: disclosure is half a fix - the RETURNED VALUE must come from
 the WIDEST state an instrument reads, never the narrowest.
 
-MEASURED (profrodai, pre-fix): disk said 44, pushed refs claimed 45 and 46, and --mint
+MEASURED (example-org, pre-fix): disk said 44, pushed refs claimed 45 and 46, and --mint
 still printed 44 - the ref scan ran, fired correctly, named the specific claimants, and
 the number beside all of it stayed the disk-only answer. THE ORDERING WAS THE BUG:
 cli.py printed `nxt` before calling scan_ref_ruling_claims at all, so there was no point

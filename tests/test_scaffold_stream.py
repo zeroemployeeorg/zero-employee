@@ -15,9 +15,7 @@ def test_scaffold_requires_corpus_marker(tmp_path):
 def test_scaffold_creates_project_claude_and_sow(tmp_path):
     root = tmp_path / "org"
     init_corpus(root)
-    info = scaffold_project_stream(
-        root, "ducktyper", "ui-refresh", sow_num=1, title="UI Framework Refresh"
-    )
+    info = scaffold_project_stream(root, "ducktyper", "ui-refresh", sow_num=1, title="UI Framework Refresh")
     proj = root / "projects" / "ducktyper"
     assert (proj / "CLAUDE.md").is_file()
     assert '@import "../../claude-md/CLAUDE.md"' in (proj / "CLAUDE.md").read_text(encoding="utf-8")

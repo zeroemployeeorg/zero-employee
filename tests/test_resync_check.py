@@ -3,7 +3,7 @@
 The machinery (re-derivation) and the check (UPSTREAM-SHA) both existed; nothing said
 WHEN to run. These pin the four verdicts, especially SKIP - a doctrine file with no
 machine-written marker is locally authored and must NEVER be re-derived, which is the
-rule a destroyed BOOT-SPARRING paid for (profrodai/RULING-001 A3).
+rule a destroyed BOOT-SPARRING paid for (example-org/RULING-001 A3).
 """
 
 import hashlib
@@ -84,7 +84,7 @@ def test_non_doctrine_dirs_are_not_scanned(tmp_path):
 
 
 # DS6-CHARTER-03 item 6: a genre added AFTER _DOCTRINE_DIRS was written must not be
-# structurally invisible - MEASURED live: --resync-check reported profrodai/org CURRENT
+# structurally invisible - MEASURED live: --resync-check reported example-org/org CURRENT
 # with 0 STALE while intake/ existed upstream and was never walked at all.
 # "intake" is now a fourth entry in _DOCTRINE_DIRS, so it is walked exactly like the
 # historic three - these two tests pin that it is genuinely covered, not just present

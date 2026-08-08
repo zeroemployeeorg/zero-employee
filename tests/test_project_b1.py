@@ -3,7 +3,7 @@ Fixtures use real path shapes; canonical vs flat-legacy vs disagreement."""
 
 from zero_employee.core import check_project, lint_file, ERROR, WARN
 
-ROOT = "/Users/riverar/repos/profrodai/sovereignagents/sovereignagents-sows"
+ROOT = "/tmp/example-org/corpus"
 
 
 def sev(findings, code):

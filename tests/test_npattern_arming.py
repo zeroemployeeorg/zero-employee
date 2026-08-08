@@ -4,7 +4,7 @@ a pre-canonical filename WARNs-to-backfill while its project is UNMIGRATED
 
 from zero_employee.core import check_n, extract_frontmatter, WARN
 
-R = "/Users/riverar/repos/profrodai/sovereignagents/sovereignagents-sows"
+R = "/tmp/example-org/corpus"
 FM = "---\nsow: quackverse-track-A\nn: 18\nschema_rev: 12\n---\nbody"
 
 

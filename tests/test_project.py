@@ -4,7 +4,7 @@ already covered by test_keystone.test_spaced_path; this suite covers derivation.
 
 from zero_employee.core import project_of
 
-ROOT = "/Users/riverar/repos/profrodai/sovereignagents/sovereignagents-sows"
+ROOT = "/tmp/example-org/corpus"
 
 
 def test_P1_flat_legacy_absolute_is_none():

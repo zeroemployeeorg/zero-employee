@@ -492,10 +492,7 @@ def _mint(root, kind, stream, words: str | None = None) -> int:
             print(f"  disk says {disk_nxt}, {len(colliding)} pushed ref(s) claim up to {widest_claim} -> MINTING {nxt}")
         print(f"  read from {len(homes)} ruling home(s), {total} existing ruling file(s) seen")
         print("  " + _MINT_RACE_NOTE.format(kind="ruling", ts=ts))
-        print(
-            "  tip: pass --words \"four to five words\" to RESERVE a canonical "
-            "RULING-NNN-<slug>.md stub on disk"
-        )
+        print('  tip: pass --words "four to five words" to RESERVE a canonical RULING-NNN-<slug>.md stub on disk')
         if colliding:
             print(
                 f"  ⚠ REF-COLLISION: {len(colliding)} pushed ref(s) already claimed >= "
@@ -550,8 +547,7 @@ def _mint(root, kind, stream, words: str | None = None) -> int:
         print(f"MINT: next {stream} SOW n = {nxt}")
         print("  " + _MINT_RACE_NOTE.format(kind="sow", ts=ts))
         print(
-            "  tip: pass --words \"four to five words\" to RESERVE a canonical "
-            f"{stream}-SOW-{nxt}-<slug>.md stub on disk"
+            f'  tip: pass --words "four to five words" to RESERVE a canonical {stream}-SOW-{nxt}-<slug>.md stub on disk'
         )
         return 0
     print(
@@ -888,8 +884,7 @@ def _cmd_scaffold(argv: list[str]) -> int:
     positionals = [a for a in argv if not str(a).startswith("-")]
     if len(positionals) < 2:
         print(
-            "Usage: zeo scaffold <project> <stream> [n] [title] "
-            "[--cursor] [--gemini] [--claude] [--agents] [--all]",
+            "Usage: zeo scaffold <project> <stream> [n] [title] [--cursor] [--gemini] [--claude] [--agents] [--all]",
             file=sys.stderr,
         )
         return 2
@@ -908,9 +903,7 @@ def _cmd_scaffold(argv: list[str]) -> int:
     if (cwd / "claude-md" / "CLAUDE.md").is_file():
         root = cwd
     try:
-        info = scaffold_project_stream(
-            root, project, stream, sow_num=sow_num, title=title, tools=tools
-        )
+        info = scaffold_project_stream(root, project, stream, sow_num=sow_num, title=title, tools=tools)
     except FileNotFoundError as e:
         print(f"scaffold: {e}", file=sys.stderr)
         return 2
@@ -1303,7 +1296,9 @@ def main(argv: list[str] | None = None) -> int:
             print(_json.dumps(payload, indent=2, default=str))
             return 0
         print(f"  KOSTENRECHNUNG (ESTIMATE — {tok_label})")
-        print(f"  rates: model={rates['model']} as_of={rates['as_of']}  {format_usd(usd)} DERIVED for ~{artifact} artifact tokens (input-only)")
+        print(
+            f"  rates: model={rates['model']} as_of={rates['as_of']}  {format_usd(usd)} DERIVED for ~{artifact} artifact tokens (input-only)"
+        )
         print("  --- TAX: paid by EVERY session of EVERY stream. MINIMISE HARD (s12) ---")
         for name, tok in sorted(K["fixed"].items(), key=lambda x: -x[1])[:6]:
             print("    {:<44} ~{:>6}".format(name, tok))
@@ -1661,10 +1656,7 @@ def main(argv: list[str] | None = None) -> int:
             f"{len(missing)} missing-upstream. NOT COMMITTED."
         )
         if skipped:
-            print(
-                "  REPORTED, not re-derived: "
-                + ", ".join(r["path"] for r in skipped)
-            )
+            print("  REPORTED, not re-derived: " + ", ".join(r["path"] for r in skipped))
         return 0
 
     if resync_upstream:

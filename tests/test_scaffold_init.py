@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from zero_employee.scaffold import init_corpus, install_bridges
+from zero_employee.scaffold import init_corpus
 
 
 def test_init_corpus_core_only(tmp_path):

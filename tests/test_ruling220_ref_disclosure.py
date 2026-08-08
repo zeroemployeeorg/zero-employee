@@ -4,7 +4,7 @@
 uncommitted work, and reading pathlib off the real working tree is why the tool beats a
 spawn message. The defect the ruling names: "disk" is a CHECKOUT, a seat's question is
 usually about the TRUNK, and the output never said which one it answered. MEASURED in
-profrodai: from a branch, --inbox reports that branch's own tail - a seat proving "my
+example-org: from a branch, --inbox reports that branch's own tail - a seat proving "my
 filing is visible to the fleet" that way has read work the fleet cannot see and called it
 published. The fix is DISCLOSURE, not relocation (s2) - these tests prove the disclosure
 is present, accurate, and does not change what gets read.
@@ -28,7 +28,7 @@ def _corpus(tmp_path):
 
 @pytest.fixture
 def repo_with_origin(tmp_path):
-    """A real corpus with a bare 'origin' remote, main pushed - the shape profrodai
+    """A real corpus with a bare 'origin' remote, main pushed - the shape example-org
     actually has (a trunk the fleet reads, and a local checkout that may be ahead)."""
     bare = tmp_path / "bare-origin.git"
     subprocess.run(["git", "init", "-q", "--bare", str(bare)], check=True, capture_output=True)
@@ -55,7 +55,7 @@ def test_git_ref_state_on_trunk_clean_and_contained(repo_with_origin):
 
 
 def test_git_ref_state_on_an_unpushed_branch_is_NOT_contained(repo_with_origin):
-    """THE EXACT profrodai SHAPE: a branch with a real commit main/origin has never seen."""
+    """THE EXACT example-org SHAPE: a branch with a real commit main/origin has never seen."""
     _git(repo_with_origin, "checkout", "-q", "-b", "feat/local-only")
     (repo_with_origin / "ruling").mkdir(exist_ok=True)
     (repo_with_origin / "ruling" / "RULING-999-x.md").write_text('---\nruling: "999"\n---\nb\n')
@@ -128,7 +128,7 @@ def test_format_ref_disclosure_unknown_containment_says_so_not_a_guess(tmp_path)
     assert "UNKNOWN" in line
 
 
-# -- CLI level: the actual profrodai defect, reproduced and shown fixed --
+# -- CLI level: the actual example-org defect, reproduced and shown fixed --
 
 
 def test_inbox_cli_discloses_the_unpushed_branch_it_actually_read(repo_with_origin, capsys):

@@ -75,7 +75,7 @@ def test_mint_ruling_floor_only_applies_when_ruling_200_is_landed(repo, capsys):
 
 
 def test_mint_ruling_no_floor_without_ruling_200_landed(repo, capsys):
-    """RULING-218 s2 item 2, the profrodai shape exactly: a corpus with org-scope rulings
+    """RULING-218 s2 item 2, the example-org shape exactly: a corpus with org-scope rulings
     below 200 and NO landed RULING-200 gets 1 + highest existing, full stop - the floor
     must never win uncontested just because the BINARY knows about it."""
     rd = repo / "ruling"
@@ -89,7 +89,7 @@ def test_mint_ruling_no_floor_without_ruling_200_landed(repo, capsys):
 
 def test_mint_ruling_errors_when_no_ruling_home_discoverable(repo, capsys):
     """RULING-218 s2.3: 0 discoverable ruling homes (no `ruling/` dir anywhere - the
-    literal `read from 0 ruling home(s)` signal from the profrodai repro) must REFUSE to
+    literal `read from 0 ruling home(s)` signal from the example-org repro) must REFUSE to
     mint, never fall back to a confident number. This `repo` fixture has claude-md/
     CLAUDE.md (a real corpus root) but has never had a ruling/ directory created."""
     rc = cli.main(["--mint", "ruling", str(repo)])
@@ -385,7 +385,7 @@ def test_full_demonstrated_round_trip_mint_collide_survive_citation_resolves(rep
     assert "next ORG-SCOPE ruling id = 1" in mint_out
     # 2. COLLIDE (for real, on disk): two seats both land RULING-001 the same day.
     # (_RULING_NAME_RE requires the zero-padded 3-digit filename shape every landed ruling
-    # in the real corpus already uses, e.g. RULING-001 in profrodai itself - so the mint's
+    # in the real corpus already uses, e.g. RULING-001 in example-org itself - so the mint's
     # bare int (1) becomes the filename's padded form (001) exactly as an authoring seat
     # would do it by hand.)
     _ruling(rd, "001", "seat-a", scope="org", title="seat A's ruling, lands first")

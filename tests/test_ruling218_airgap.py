@@ -1,5 +1,5 @@
 """RULING-218: a shared binary carried THIS corpus's doctrine (RULING-200's 200+ band)
-across the airgap into profrodai, where `--mint ruling` returned 200 instead of the
+across the airgap into example-org, where `--mint ruling` returned 200 instead of the
 correct 46 - via TWO compounding defects (s1): (a) discovery was blind on an explicit
 root that was never validated, so it silently read 0 ruling homes; (b) even with
 discovery repaired, the floor was hardcoded `max(200, ...)` and won regardless, because
@@ -7,8 +7,8 @@ RULING-200 has never landed in that corpus. Both fixed together (s2), plus s3's 
 (a claim can live on a pushed branch `--mint` never walked).
 
 This file tests the MECHANISM, synthetically, in disposable tmp_path repos - never against
-the live profrodai corpus (read-only, out of scope for this seat) or by re-deriving numbers
-by hand. The literal profrodai repro (46) and the sovereignagents non-regression (218+) were
+the live example-org corpus (read-only, out of scope for this seat) or by re-deriving numbers
+by hand. The literal example-org repro (46) and the sovereignagents non-regression (218+) were
 verified directly against the real corpora as part of this SOW's proof and are recorded
 there, not re-asserted here as brittle integration tests against a moving-target corpus.
 """
@@ -46,7 +46,7 @@ def _ruling(d, num, letter, scope="org"):
 
 
 def test_near_miss_explicit_root_self_heals_via_walkup(tmp_path):
-    """THE LITERAL profrodai repro shape: `sow-lint --mint ruling org-master`, run FROM
+    """THE LITERAL example-org repro shape: `sow-lint --mint ruling org-master`, run FROM
     INSIDE org-master, builds the nonexistent path `org-master/org-master`. The OLD
     `_discover_root` returned that bogus Path verbatim and every downstream glob against
     it silently came back empty. The fix walks up from the (possibly nonexistent) explicit
@@ -57,7 +57,7 @@ def test_near_miss_explicit_root_self_heals_via_walkup(tmp_path):
     _ruling(rd, "045", "last", scope="org")
     # cli.main does not itself chdir; reproduce the repro's exact shape - run FROM INSIDE
     # org-master, passing "org-master" again as the positional (the literal command that
-    # was reproduced against profrodai).
+    # was reproduced against example-org).
     import os
 
     old = os.getcwd()
@@ -70,7 +70,7 @@ def test_near_miss_explicit_root_self_heals_via_walkup(tmp_path):
 
 
 def test_near_miss_explicit_root_yields_the_measured_46_shape(tmp_path, capsys):
-    """The profrodai numbers, reproduced synthetically: org-scope rulings below 200 and
+    """The example-org numbers, reproduced synthetically: org-scope rulings below 200 and
     no landed RULING-200 -> `1 + highest`, discovered even through the exact near-miss
     path from the repro (`<root> <root>` while already inside <root>)."""
     corpus = _seed_corpus(tmp_path / "org-master")

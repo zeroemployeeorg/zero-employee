@@ -1,6 +1,6 @@
 """find_sow_roots must see BOTH layouts, including the MIXED state of a live restructure.
 
-MEASURED (GM-DS6-183): glob('*/sow') is single-level -> profrodai `0 projects`. The count is
+MEASURED (GM-DS6-183): glob('*/sow') is single-level -> example-org `0 projects`. The count is
 the least of it: ungraded_streams and flat_dark_files iterate sow_roots, so an empty list
 means the DARK migration meter reports zero and reads green because it cannot see.
 """
