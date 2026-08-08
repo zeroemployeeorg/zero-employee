@@ -8,6 +8,32 @@
 - **MAJOR** — breaking CLI or import changes (allowed in 0.x with a clear changelog note).
 - Single source of truth: `version` in `pyproject.toml`. Sync tags as `vX.Y.Z`.
 
+## Trusted publishing (OIDC — no API tokens in the repo)
+
+Publishing uses GitHub Actions OpenID Connect against pending/trusted publishers on
+TestPyPI and PyPI. Workflow: [`.github/workflows/publish.yml`](../.github/workflows/publish.yml).
+Environments on the GitHub repo must be named exactly **`testpypi`** and **`pypi`**.
+
+### Pending publisher form values (register once on each index)
+
+| Field | TestPyPI | PyPI (production) |
+| --- | --- | --- |
+| Project Name | `zero-employee` | `zero-employee` |
+| Owner | `sovereignagents` | `sovereignagents` |
+| Repository | `zero-employee` | `zero-employee` |
+| Workflow name | `publish.yml` | `publish.yml` |
+| Environment | `testpypi` | `pypi` |
+
+- TestPyPI: https://test.pypi.org/manage/account/publishing/
+- PyPI: https://pypi.org/manage/account/publishing/
+
+### GitHub Environments
+
+Create under **Repo → Settings → Environments** (or `gh api`):
+
+- `testpypi` — no required reviewers (rehearsal)
+- `pypi` — required reviewer recommended; restrict deploys to tags / `main`
+
 ## Checklist (every release)
 
 1. **Leak scan the wheel** (org-private instrument):
@@ -15,28 +41,41 @@
    uv build
    bash path/to/org/tools/stream-instruments/zeo-wheel-leak-scan.sh dist/zero_employee-*.whl
    ```
-   Class-1 must be empty. Class-2/3 must meet the generalization bar.
 2. Bump `version` in `pyproject.toml`.
 3. Update `CHANGELOG.md`.
-4. `make verify` (or `uv run python -m pytest` + ruff as configured).
-5. Tag `vX.Y.Z` on the release commit.
-6. **TestPyPI first** (operator credentials):
+4. Ensure CI is green (`make verify` / pytest).
+5. Commit and push to `sovereignagents/zero-employee` `main`.
+
+### TestPyPI first
+
+6. Actions → **Publish** → Run workflow → target **`testpypi`**.
+7. Clean-machine DoD:
    ```bash
-   uv publish --publish-url https://test.pypi.org/legacy/
-   # clean machine:
+   uv tool uninstall zero-employee 2>/dev/null || true
    uv tool install --index-url https://test.pypi.org/simple/ \
      --extra-index-url https://pypi.org/simple/ zero-employee
-   zeo --board          # must fail honestly without a corpus
-   ZEO_SOWS_ROOT=... zeo --board
+   zeo --board          # expect exit 2 + "couldn't find a corpus"
+   ZEO_SOWS_ROOT=/path/to/corpus zeo --board
    sow-lint --help
    ```
-7. **PyPI** (operator act; version numbers are permanent):
+
+### Production PyPI
+
+8. Tag and push (triggers production publish), **or** Run workflow → target **`pypi`**:
    ```bash
-   uv publish
+   git tag -a vX.Y.Z -m "zero-employee X.Y.Z"
+   git push origin vX.Y.Z
    ```
-8. Clean-machine DoD from real PyPI (both halves + `sow-lint` alias).
+9. Clean-machine DoD from real PyPI:
+   ```bash
+   uv tool install zero-employee
+   zeo --board
+   ZEO_SOWS_ROOT=/path/to/corpus zeo --board
+   sow-lint --help
+   ```
+
+Version numbers are permanent on each index — a bad upload cannot be un-shipped.
 
 ## Credentials
 
-Never commit tokens. Prefer Trusted Publishing or a short-lived API token in the
-operator's environment. Agents must not hold or echo publish credentials.
+Never commit tokens. Prefer Trusted Publishing (this workflow). Agents must not hold or echo publish credentials.
