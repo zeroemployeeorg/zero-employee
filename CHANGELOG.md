@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.2] - 2026-08-09
+
+### Added
+- Parallel `ThreadPoolExecutor` pre-commit gate checking in `.git/hooks/pre-commit` to prevent timeouts on batch commits.
+- Deterministic Rev 17 frontmatter injection support for pre-schema SOWs.
+- Automatic `done_when` and `restaufwand` frontmatter enforcement for active working SOWs.
+
+### Changed
+- Improved `-RevN` suffix validation and stream identity resolution in `zeo --commit-check`.
+- Canonical filename promotion support across active project workstreams.
+
+
 All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
