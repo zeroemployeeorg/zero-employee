@@ -164,6 +164,8 @@ def install_bridges(root: pathlib.Path | str, tools: Iterable[str] | None = None
 
 def init_corpus(root: pathlib.Path | str, tools: Iterable[str] | None = None) -> dict:
     """Scaffold a corpus: marker + IDE entrypoint + dirs; optional bridges."""
+    from .hooks import ensure_board_gitignore
+
     root = pathlib.Path(root).resolve()
     root.mkdir(parents=True, exist_ok=True)
     created: list[str] = []
@@ -184,10 +186,12 @@ def init_corpus(root: pathlib.Path | str, tools: Iterable[str] | None = None) ->
         entry.write_text(_read_template("CLAUDE.md"), encoding="utf-8")
         created.append("CLAUDE.md")
 
+    if ensure_board_gitignore(root):
+        created.append(".gitignore")
+
     tools_set = normalize_tools(tools)
     bridges = install_bridges(root, tools_set) if tools_set else {"root": str(root), "tools": [], "actions": []}
     return {"root": str(root), "created": created, "bridges": bridges}
-
 
 def _slugify_title(title: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")

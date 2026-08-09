@@ -43,7 +43,14 @@ from .cost import (
     session_cost_report,
     usd_for_input_tokens,
 )
-from .hooks import hooks_install
+from .hooks import (
+    hooks_install,
+    run_pre_commit,
+    run_pretooluse_git,
+    run_session_start,
+    run_stop,
+    warn_tracked_boards,
+)
 from .scaffold import (
     init_corpus,
     install_bridges,
@@ -743,7 +750,7 @@ _USAGE = """zeo (zero-employee) - portable SOW governance tooling
 
 USAGE
   zeo <file-or-dir>          Lint a SOW / ruling / boot doc (grades it against canonical).
-  zeo --board [path]         Write STATE.md - the fleet board. Path optional (auto-found).
+  zeo --board [path]         Write local STATE.md (gitignored). Path optional (auto-found).
   zeo --triage [path]        The operator worklist: who needs a ruling, a successor, unsticking.
   zeo --promote <stream-dir>  Plan the canonical renames (dry-run, writes nothing).
   zeo --resync-check <upstream> [target]
@@ -751,8 +758,12 @@ USAGE
   zeo --resync-apply <upstream> [target]
                                   RE-DERIVE inherited files (UPSTREAM-SHA + transforms).
                                   Skips locally authored files. Never commits or pushes.
-  zeo hooks install [path]   Write tools/hooks templates that call zeo; install
-                                  .git/hooks/pre-commit. Stop uses --session-cost (no rates).
+  zeo hooks install [path]   Write thin tools/hooks stubs + .git/hooks/pre-commit;
+                                  gitignore STATE.md / stream-index.md (local views).
+  zeo hooks pre-commit       Run the pre-commit gate (called by the thin stub).
+  zeo hooks session-start    SessionStart orientation + local board refresh.
+  zeo hooks stop             Stop hook: session-cost log + uncommitted advisory.
+  zeo hooks pretooluse-git   PreToolUse advisory before git commit/push.
   zeo init [path] [--cursor|--gemini|--claude|--agents|--all]
                                   Scaffold a corpus: claude-md/CLAUDE.md marker + root
                                   CLAUDE.md (@import). Tool bridges are opt-in.
@@ -781,7 +792,7 @@ USAGE
   zeo --mint sow <stream> [path]
                                   The next SOW n: for one stream (same read locate_stream
                                   already does). Same race limitation, printed every call.
-  zeo --stream-index [path]  Write stream-index.md - a stream id resolves to a path
+  zeo --stream-index [path]  Write local stream-index.md (gitignored) - stream id → path
                                   (doctrine). Regenerated WHOLE on every run.
   zeo --digest [since] [path]
                                   What happened in a session, read-only, pasteable - folds
@@ -790,9 +801,9 @@ USAGE
                                   or an explicit --since window like 4h/1d).
 
 OPTIONS
-  --board            Regenerate the coordination board (STATE.md) from every SOW's frontmatter.
-  --stream-index     Regenerate stream-index.md (doctrine) - the id-to-path map that
-                     `binds:` and requested_by's <stream>#<n> form resolve through.
+  --board            Regenerate local STATE.md (gitignored) from every SOW's frontmatter.
+  --stream-index     Regenerate local stream-index.md (gitignored; doctrine) - id-to-path map
+                     that `binds:` and requested_by's <stream>#<n> form resolve through.
   --inbox <stream>   A stream's own view: what it's waiting on, what was ruled for it.
   --triage           The operator worklist: whom do I help today (six buckets).
   --commit-check     At the commit path: a ghost requested_by is an ERROR, not a WARN
@@ -828,7 +839,9 @@ OPTIONS
   --resync-apply <upstream> [target]
                      Re-derive inherited doctrine from upstream (writes files; no commit).
   hooks install [path]
-                     Install tools/hooks templates + .git/hooks/pre-commit into a corpus.
+                     Install thin hook stubs + .git/hooks/pre-commit; gitignore boards.
+  hooks pre-commit|session-start|stop|pretooluse-git
+                     Hook runners (logic lives in the package; stubs just exec these).
   init [path] [--cursor|--gemini|--claude|--agents|--all]
                      Scaffold corpus marker + CLAUDE.md entrypoint; bridges opt-in.
   scaffold <project> <stream> [n] [title] [--cursor|--gemini|--claude|--agents|--all]
@@ -933,14 +946,29 @@ def _cmd_bridges(argv: list[str]) -> int:
     return 0
 
 
-def main(argv: list[str] | None = None) -> int:
-    # sys.argv has the program name at [0] (strip it); an explicitly-passed list
-    # (tests, direct calls) is ALREADY bare and must NOT be stripped. The old
-    # 'args = argv[1:]' stripped BOTH, so main(['--help']) became [] -> usage-error 2
-    # (diag). This is the arg-convention bug the new CLI tests exposed.
-    args = sys.argv[1:] if argv is None else argv
-    if len(args) >= 2 and args[0] == "hooks" and args[1] == "install":
-        path = args[2] if len(args) > 2 and not str(args[2]).startswith("-") else None
+def _print_hooks_install(info: dict) -> None:
+    print(f"HOOKS-INSTALL: wrote {len(info['written'])} template(s) under tools/hooks/")
+    for w in info["written"]:
+        print(f"  {w}")
+    if info.get("gitignore_updated"):
+        print("  .gitignore: STATE.md + stream-index.md (local views, not committed)")
+    else:
+        print("  .gitignore: board entries already present")
+    if info["git_hook"]:
+        print(f"  git pre-commit: {info['git_hook']}")
+    else:
+        print("  git pre-commit: skipped (no .git dir)")
+    warn_tracked_boards(pathlib.Path(info["hooks_dir"]).parent.parent)
+
+
+def _cmd_hooks(argv: list[str]) -> int:
+    if not argv:
+        print("zeo hooks: install | pre-commit | session-start | stop | pretooluse-git", file=sys.stderr)
+        return 2
+    sub = argv[0]
+    rest = argv[1:]
+    if sub == "install":
+        path = rest[0] if rest and not str(rest[0]).startswith("-") else None
         root = _discover_root(path)
         if root is None:
             print("zeo hooks install: run from inside the corpus (or pass a path)", file=sys.stderr)
@@ -950,14 +978,34 @@ def main(argv: list[str] | None = None) -> int:
         except Exception as e:
             print(f"zeo hooks install: {e}", file=sys.stderr)
             return 2
-        print(f"HOOKS-INSTALL: wrote {len(info['written'])} template(s) under tools/hooks/")
-        for w in info["written"]:
-            print(f"  {w}")
-        if info["git_hook"]:
-            print(f"  git pre-commit: {info['git_hook']}")
-        else:
-            print("  git pre-commit: skipped (no .git dir)")
+        _print_hooks_install(info)
         return 0
+    if sub == "pre-commit":
+        path = rest[0] if rest and not str(rest[0]).startswith("-") else None
+        root = _discover_root(path) if path else None
+        return run_pre_commit(root)
+    if sub == "session-start":
+        path = rest[0] if rest and not str(rest[0]).startswith("-") else None
+        root = _discover_root(path) if path else None
+        return run_session_start(root)
+    if sub == "stop":
+        path = rest[0] if rest and not str(rest[0]).startswith("-") else None
+        root = _discover_root(path) if path else None
+        return run_stop(root)
+    if sub == "pretooluse-git":
+        return run_pretooluse_git()
+    print(f"zeo hooks: unknown subcommand {sub!r}", file=sys.stderr)
+    return 2
+
+
+def main(argv: list[str] | None = None) -> int:
+    # sys.argv has the program name at [0] (strip it); an explicitly-passed list
+    # (tests, direct calls) is ALREADY bare and must NOT be stripped. The old
+    # 'args = argv[1:]' stripped BOTH, so main(['--help']) became [] -> usage-error 2
+    # (diag). This is the arg-convention bug the new CLI tests exposed.
+    args = sys.argv[1:] if argv is None else argv
+    if args and args[0] == "hooks":
+        return _cmd_hooks(args[1:])
     if args and args[0] == "init":
         return _cmd_init(args[1:])
     if args and args[0] == "scaffold":
@@ -1157,13 +1205,7 @@ def main(argv: list[str] | None = None) -> int:
             except Exception as e:
                 print(f"zeo --hooks-install: {e}", file=sys.stderr)
                 return 2
-            print(f"HOOKS-INSTALL: wrote {len(info['written'])} template(s) under tools/hooks/")
-            for w in info["written"]:
-                print(f"  {w}")
-            if info["git_hook"]:
-                print(f"  git pre-commit: {info['git_hook']}")
-            else:
-                print("  git pre-commit: skipped (no .git dir)")
+            _print_hooks_install(info)
             return 0
         elif args[i] == "--promote" and i + 1 < len(args):
             promote_dir = args[i + 1]

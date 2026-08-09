@@ -1,42 +1,16 @@
 #!/usr/bin/env bash
-# zeo pre-commit gate. FAIL-CLOSED: if the gate cannot run, it BLOCKS the commit.
-# POSIX/bash-3.2 safe. Installed by: zeo hooks install
+# Thin stub — logic lives in the zero-employee package (`zeo hooks pre-commit`).
+# Installed by: zeo hooks install
 set -uo pipefail
-
-block() { echo "COMMIT BLOCKED: $1" >&2; exit 1; }
-
-SOWLINT=""
-for cand in "$(command -v zeo 2>/dev/null || true)" \
-            "$HOME/.local/bin/zeo" \
-            "$HOME/.local/share/uv/tools/zeo/bin/zeo" \
-            "$HOME/.local/share/uv/tools/zero-employee/bin/zeo"; do
-  if [ -n "$cand" ] && [ -x "$cand" ]; then SOWLINT="$cand"; break; fi
+ZEO=""
+for c in "$(command -v zeo 2>/dev/null || true)" \
+         "$HOME/.local/bin/zeo" \
+         "$HOME/.local/share/uv/tools/zeo/bin/zeo" \
+         "$HOME/.local/share/uv/tools/zero-employee/bin/zeo"; do
+  if [ -n "$c" ] && [ -x "$c" ]; then ZEO="$c"; break; fi
 done
-[ -z "$SOWLINT" ] && block "zeo not found; the gate cannot run. Install it, or 'git commit --no-verify' to bypass deliberately."
-
-STAGED=$(git diff --cached --name-only --diff-filter=ACM | grep -E '(^|/)(sow|ruling)/.*\.md$' || true)
-[ -z "$STAGED" ] && exit 0
-
-FAILED=0
-while IFS= read -r f; do
-  [ -z "$f" ] && continue
-  [ -f "$f" ] || continue
-  OUT=$("$SOWLINT" --commit-check "$f" 2>&1); RC=$?
-  if [ "$RC" -ne 0 ]; then
-    echo "-- zeo rejected: $f" >&2
-    echo "$OUT" | grep -E 'FAIL:|CANNOT-GRADE|requested_by-ghost|\[status-enum\]|\[n-|\[keystone\]' >&2 || echo "$OUT" | tail -3 >&2
-    FAILED=1
-  fi
-done <<< "$STAGED"
-
-if echo "$STAGED" | grep -qE '(^|/)ruling/RULING-[0-9]+-'; then
-  CORPUS_OUT=$("$SOWLINT" --commit-check-corpus 2>&1); CORPUS_RC=$?
-  if [ "$CORPUS_RC" -ne 0 ]; then
-    echo "-- zeo rejected: ruling-number collision, corpus-wide" >&2
-    echo "$CORPUS_OUT" >&2
-    FAILED=1
-  fi
+if [ -z "$ZEO" ]; then
+  echo "COMMIT BLOCKED: zeo not found; the gate cannot run. Install it, or 'git commit --no-verify' to bypass deliberately." >&2
+  exit 1
 fi
-
-[ "$FAILED" -ne 0 ] && block "staged SOW/ruling file(s) failed zeo. Fix and re-stage."
-exit 0
+exec "$ZEO" hooks pre-commit "$@"

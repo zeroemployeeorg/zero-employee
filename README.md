@@ -39,7 +39,7 @@ Portable governance tooling for Statement-of-Work (SOW) corpora. Install the pac
 * **Deterministic SOW Linting:** Enforces strict frontmatter schemas (`sow:`, `n:`, `status:`, `restaufwand:`, `done_when:`).
 * **Zero-Clutter Scaffolding:** Clean-by-default repository and workstream generation with opt-in IDE bridges (`--cursor`, `--gemini`, `--claude`, `--agents`).
 * **Cost & Token Proxies:** Real-time token tracking (`--session-cost`, `--repo-cost`) with live rate cards.
-* **Fleet State Board (`STATE.md`):** Automatically indexes active streams, open questions, and held workstreams across all fleet repos.
+* **Fleet State Board (`STATE.md`):** Local navigation board of active streams, open questions, and held workstreams (gitignored — regenerate with `zeo --board`, never commit).
 
 ---
 
@@ -85,12 +85,14 @@ ZEO_SOWS_ROOT=/path/to/corpus zeo --triage
 | `zeo init [path]` | Scaffold corpus marker + `CLAUDE.md` (`@import`). Bridges are opt-in. |
 | `zeo scaffold <project> <stream>` | Create project `CLAUDE.md` + Rev 17 SOW draft. |
 | `zeo bridges [flags]` | Install/resync IDE and agent bridges into an existing repository. |
-| `zeo --board` | Regenerate the global fleet state board (`STATE.md`). |
+| `zeo --board` | Regenerate the local fleet state board (`STATE.md`, gitignored). |
+| `zeo --stream-index` | Regenerate local `stream-index.md` (gitignored). |
 | `zeo --triage` | Display operator worklist (open questions, held streams, unread rulings). |
 | `zeo --digest` | Generate session commit digest and tree status. |
 | `zeo --repo-cost` / `--session-cost` | Calculate USD cost proxies for LLM model token usage. |
 | `zeo --resync-check` / `--resync-apply` | Check and apply inherited doctrine updates across projects. |
-| `zeo hooks install` | Install automated git pre-commit and session hook templates. |
+| `zeo hooks install` | Install thin git/session hook stubs + gitignore board files. |
+| `zeo hooks pre-commit` | Pre-commit gate (unstage boards, regen locally, lint staged SOWs). |
 | `zeo <path>` | Lint a single SOW, ruling, or skill file against strict schema rules. |
 
 `zeo` accepts the same arguments as `zeo`.

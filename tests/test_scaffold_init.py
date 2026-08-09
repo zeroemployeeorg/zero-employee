@@ -19,6 +19,9 @@ def test_init_corpus_core_only(tmp_path):
     assert not (root / "GEMINI.md").exists()
     assert info["bridges"]["tools"] == []
     assert "claude-md/CLAUDE.md" in info["created"]
+    assert ".gitignore" in info["created"]
+    gi = (root / ".gitignore").read_text(encoding="utf-8")
+    assert "STATE.md" in gi and "stream-index.md" in gi
 
 
 def test_init_idempotent(tmp_path):

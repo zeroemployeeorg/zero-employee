@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.1.3] - 2026-08-09
+
+### Added
+
+- Thin-wrapper corpus hooks: installed stubs only `exec zeo hooks <subcommand>`; gate and
+  orientation logic live in the package so upgrades update students without reinstalling
+  script bodies (`pre-commit`, `session-start`, `stop`, `pretooluse-git`).
+- `zeo hooks pre-commit|session-start|stop|pretooluse-git` runners.
+- Automatic `.gitignore` entries for `STATE.md` and `stream-index.md` from `zeo init` and
+  `zeo hooks install` (boards are local views, not shared git artifacts).
+
+### Changed
+
+- Pre-commit unstages generated boards if staged, regenerates them locally (fail-open), and
+  never `git add`s them — beginners no longer hit `STATE.md` merge conflicts.
+- Docs: getting-started recommends hooks install; boards documented as gitignored local views.
+
+### Migration (existing corpora that still track boards)
+
+```bash
+git rm --cached STATE.md stream-index.md
+zeo hooks install
+```
+
 ## [0.1.2] - 2026-08-09
 
 ### Added
