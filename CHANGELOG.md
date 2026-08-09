@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.1.4] - 2026-08-09
+
+### Added
+- **Zero-Friction Git Flow:** `zeo hooks install` now automatically configures a `zeo-auto` git merge driver to silently bypass `STATE.md` and `stream-index.md` conflicts.
+- **Auto-Regeneration:** Pre-commit hooks now automatically rebuild and stage `STATE.md` and `stream-index.md` on every commit, ensuring the board is always accurate without manual intervention.
+
+### Changed
+- Refactored `pre-commit` into a thin wrapper pattern that delegates execution entirely to the `zeo` binary, ensuring git hooks update automatically when the Python package is upgraded.
+
+
 ## [0.1.3] - 2026-08-09
 
 ### Added
