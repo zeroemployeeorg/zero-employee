@@ -16,6 +16,7 @@ import os
 import pytest
 from zero_employee import cli
 
+
 def _sibling_org_repo() -> pathlib.Path:
     env = os.environ.get("ZEO_ORG_REPO", "").strip()
     if env:
@@ -195,9 +196,7 @@ def test_digest_matches_the_real_bash_script_on_the_same_commit_range(two_author
     # Public package generalizes ruling citations to "doctrine"; the org bash
     # script (and PATH zeo it shells out to for triage) may still name RULING-NNN.
     # Normalize both sides so INTAKE / successor / DARK / UNCOSIGNED headers equate.
-    _ruling_cite = re.compile(
-        r"RULING-\d+(?:\s+s[\d.]+)?(?:\s+item\s+\d+)?|doctrine(?:\s+item\s+\d+)?"
-    )
+    _ruling_cite = re.compile(r"RULING-\d+(?:\s+s[\d.]+)?(?:\s+item\s+\d+)?|doctrine(?:\s+item\s+\d+)?")
 
     def _norm_ruling_cites(line: str) -> str:
         if "UNCOSIGNED ORG-SCOPE RULINGS" in line:
@@ -207,6 +206,4 @@ def test_digest_matches_the_real_bash_script_on_the_same_commit_range(two_author
 
     assert [_norm_ruling_cites(l) for l in bp] == [_norm_ruling_cites(l) for l in pp]
     assert [_norm_ruling_cites(l) for l in bpost] == [_norm_ruling_cites(l) for l in ppost]
-    assert [_norm_ruling_cites(l.strip()) for l in bo] == [
-        _norm_ruling_cites(l.strip()) for l in po
-    ]
+    assert [_norm_ruling_cites(l.strip()) for l in bo] == [_norm_ruling_cites(l.strip()) for l in po]

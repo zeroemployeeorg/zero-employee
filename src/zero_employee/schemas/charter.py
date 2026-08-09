@@ -61,8 +61,7 @@ def grade_charter(fm: dict, *, commit_mode: bool = False) -> list:
                 Finding(
                     ERROR,
                     "charter-unlanded",
-                    f"charter {cid} is ACTIVE with an EMPTY landing_commit. "
-                    "Fix: set landing_commit: self (or the SHA)",
+                    f"charter {cid} is ACTIVE with an EMPTY landing_commit. Fix: set landing_commit: self (or the SHA)",
                 )
             )
     if status == "SUPERSEDED":

@@ -78,18 +78,14 @@ def test_every_lifecycle_validates(lifecycle):
 
 
 def test_validate_claim_normalizes_case_and_whitespace():
-    claim, err = migrate.validate_claim(
-        '{"status": "  stale ", "lifecycle": " design-memo "}'
-    )
+    claim, err = migrate.validate_claim('{"status": "  stale ", "lifecycle": " design-memo "}')
     assert err is None and claim is not None
     assert claim.status == "STALE"
     assert claim.lifecycle == "DESIGN-MEMO"
 
 
 def test_validate_claim_rejects_extra_keys_and_missing_lifecycle():
-    _, extra = migrate.validate_claim(
-        '{"status":"STALE","lifecycle":"RECON","project":"nope"}'
-    )
+    _, extra = migrate.validate_claim('{"status":"STALE","lifecycle":"RECON","project":"nope"}')
     assert extra is not None and "unexpected key" in extra
 
     _, missing = migrate.validate_claim('{"status":"STALE"}')
@@ -125,11 +121,7 @@ def test_extract_claim_takes_last_json_object_in_reasoning():
 
 
 def test_extract_claim_yaml_keyline_fallback_and_ansi_think_strip():
-    raw = (
-        "<think>ignore me</think>\n"
-        "status: STALE\x1b[9D\x1b[K\n"
-        "lifecycle: RECON\n"
-    )
+    raw = "<think>ignore me</think>\nstatus: STALE\x1b[9D\x1b[K\nlifecycle: RECON\n"
     assert migrate.extract_claim(raw) == {"status": "STALE", "lifecycle": "RECON"}
 
 
@@ -157,9 +149,7 @@ def test_loose_corpus_doc_gets_no_invented_stream():
 
 
 def test_n_comes_from_the_filename_or_is_honestly_absent():
-    assert (
-        migrate.n_of(pathlib.Path("ds-6-SOW-01-reception-and-migrate-design.md")) == 1
-    )
+    assert migrate.n_of(pathlib.Path("ds-6-SOW-01-reception-and-migrate-design.md")) == 1
     assert migrate.n_of(pathlib.Path("SOW-TrackA-core-fs-completion-Rev1.md")) is None
 
 
@@ -252,9 +242,7 @@ def test_assemble_and_render_round_trip_passes_migrate_check(tmp_path):
         created=datetime.date(2020, 1, 2),
         updated=datetime.date(2021, 3, 4),
     )
-    claim = migrate.Claim.model_validate(
-        {"status": "STALE", "lifecycle": "DECISION-RECORD"}
-    )
+    claim = migrate.Claim.model_validate({"status": "STALE", "lifecycle": "DECISION-RECORD"})
     fm = migrate.assemble_frontmatter(
         ground,
         claim,
@@ -272,13 +260,7 @@ def test_assemble_and_render_round_trip_passes_migrate_check(tmp_path):
     for key in _MIGRATE_REQUIRED:
         assert dumped.get(key) not in (None, ""), key
 
-    dest = (
-        tmp_path
-        / "governance-layer"
-        / "sow"
-        / "ds-6"
-        / "ds-6-SOW-07-legacy.md"
-    )
+    dest = tmp_path / "governance-layer" / "sow" / "ds-6" / "ds-6-SOW-07-legacy.md"
     dest.parent.mkdir(parents=True)
     dest.write_bytes(candidate)
     status, feedback = migrate_check(dest)
@@ -557,10 +539,7 @@ def test_a_talking_model_still_cannot_smuggle_a_working_status(tmp_path):
         f,
         tmp_path,
         tmp_path,
-        lambda p, t: (
-            "Thinking...\nlots of reasoning\n"
-            "status: RULING-REQUESTED\nlifecycle: ESCALATION\n"
-        ),
+        lambda p, t: "Thinking...\nlots of reasoning\nstatus: RULING-REQUESTED\nlifecycle: ESCALATION\n",
     )
     assert out == "ESCALATE"
     assert f.read_text(encoding="utf-8") == before

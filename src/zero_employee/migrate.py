@@ -23,7 +23,12 @@ from .core import (
     migrate_check,
     project_of,
 )
-from .schemas.common import LIFECYCLES, STATUS_ENUM, STATUS_RESTING, STATUS_WORKING
+from .schemas.common import (  # noqa: F401
+    LIFECYCLES,
+    STATUS_ENUM,
+    STATUS_RESTING,
+    STATUS_WORKING,
+)
 
 
 UNKNOWN = "unknown - pre-schema prose"
@@ -131,10 +136,7 @@ Those facts are derived mechanically.
 def _clean_model_output(text: str) -> str:
     text = _ANSI.sub("", text or "")
     text = _THINK.sub("", text)
-    return "\n".join(
-        line for line in text.splitlines()
-        if not line.strip().startswith("```")
-    ).strip()
+    return "\n".join(line for line in text.splitlines() if not line.strip().startswith("```")).strip()
 
 
 def extract_claim(raw: str) -> dict[str, object]:
@@ -181,10 +183,7 @@ def validate_claim(raw: str) -> tuple[Claim | None, str | None]:
     extracted = extract_claim(raw)
 
     if not extracted:
-        return None, (
-            "EXTRACT: no status/lifecycle claim was found; return exactly "
-            "one JSON object"
-        )
+        return None, ("EXTRACT: no status/lifecycle claim was found; return exactly one JSON object")
 
     try:
         return Claim.model_validate(extracted), None
@@ -197,13 +196,9 @@ def validate_claim(raw: str) -> tuple[Claim | None, str | None]:
 
             if field == "status":
                 allowed = ", ".join(sorted(STATUS_RESTING))
-                messages.append(
-                    f"status must be an at-rest value; allowed: {allowed}"
-                )
+                messages.append(f"status must be an at-rest value; allowed: {allowed}")
             elif field == "lifecycle":
-                messages.append(
-                    f"lifecycle must be one of: {', '.join(LIFECYCLES)}"
-                )
+                messages.append(f"lifecycle must be one of: {', '.join(LIFECYCLES)}")
             elif error_type == "extra_forbidden":
                 messages.append(f"remove unexpected key: {field}")
             else:
@@ -219,11 +214,7 @@ def _body_window(body: str, head: int = 80, tail: int = 20) -> str:
         return body
 
     omitted = len(lines) - head - tail
-    return "\n".join(
-        lines[:head]
-        + [f"... ({omitted} lines omitted) ..."]
-        + lines[-tail:]
-    )
+    return "\n".join(lines[:head] + [f"... ({omitted} lines omitted) ..."] + lines[-tail:])
 
 
 def stream_of(path: pathlib.Path, root: pathlib.Path | None = None) -> str | None:
@@ -467,10 +458,7 @@ def ollama_model(
 
         if result.returncode != 0:
             detail = result.stderr.strip()[:300]
-            raise RuntimeError(
-                f"Ollama HTTP failed ({http_error}); "
-                f"CLI failed ({result.returncode}): {detail}"
-            )
+            raise RuntimeError(f"Ollama HTTP failed ({http_error}); CLI failed ({result.returncode}): {detail}")
 
         return result.stdout
 
@@ -543,11 +531,7 @@ def migrate_file(
             "frontmatter present; v1 migrates Class-A only",
         )
 
-    migration_date = (
-        datetime.date.fromisoformat(today)
-        if today
-        else datetime.date.today()
-    )
+    migration_date = datetime.date.fromisoformat(today) if today else datetime.date.today()
 
     ground = derive_ground(path, root, repo)
     blockers = ground_blockers(ground)
@@ -556,11 +540,7 @@ def migrate_file(
     if blockers:
         return "ESCALATE", "ungrounded identity: " + "; ".join(blockers)
 
-    gaps = sorted(
-        field
-        for field in ("sow", "created", "updated")
-        if getattr(ground, field) is None
-    )
+    gaps = sorted(field for field in ("sow", "created", "updated") if getattr(ground, field) is None)
 
     feedback = ""
     rejection_history: list[str] = []
@@ -583,10 +563,7 @@ def migrate_file(
 
         if claim_error is not None:
             rejection_history.append(claim_error)
-            feedback = (
-                f"Your previous answer was rejected: {claim_error}. "
-                "Return one corrected JSON object."
-            )
+            feedback = f"Your previous answer was rejected: {claim_error}. Return one corrected JSON object."
             continue
 
         try:
@@ -628,21 +605,12 @@ def migrate_file(
             status, gate_feedback = migrate_check(destination)
 
         if status != "PASS":
-            rejection = (
-                f"{RejectionKind.GATE}: "
-                + "; ".join(str(item) for item in gate_feedback)
-            )
+            rejection = f"{RejectionKind.GATE}: " + "; ".join(str(item) for item in gate_feedback)
             rejection_history.append(rejection)
-            feedback = (
-                f"Your previous answer was rejected by the gate: {rejection}. "
-                "Correct only status and lifecycle."
-            )
+            feedback = f"Your previous answer was rejected by the gate: {rejection}. Correct only status and lifecycle."
 
             # Stop early when the model repeats an identical invalid claim.
-            if (
-                len(rejection_history) >= 3
-                and len(set(rejection_history[-3:])) == 1
-            ):
+            if len(rejection_history) >= 3 and len(set(rejection_history[-3:])) == 1:
                 break
 
             continue
@@ -671,8 +639,7 @@ def migrate_file(
 
     return (
         "ESCALATE",
-        f"gate never green after {len(rejection_history)} attempts; "
-        f"last: {last[:300]}",
+        f"gate never green after {len(rejection_history)} attempts; last: {last[:300]}",
     )
 
 

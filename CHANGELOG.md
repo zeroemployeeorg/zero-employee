@@ -5,6 +5,23 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] — 2026-08-09
+
+### Added
+
+- Document `zeo init`, `zeo scaffold`, and `zeo bridges` (corpus/project scaffolding with
+  opt-in IDE bridges). These verbs shipped on the 0.1.0 surface but were omitted from the
+  prior changelog notes.
+- Local `@import "rel/path"` doctrine expansion via `read_doctrine()` (airgap-safe; no HTTP).
+- Packaged scaffold templates and personas (`zeo-architect` / `zeo-claimant` / `zeo-verifier`).
+- OIDC trusted-publishing workflow (`.github/workflows/publish.yml`) and release docs.
+
+### Changed
+
+- README rebrand with command reference for scaffold verbs.
+- Richer PyPI metadata (authors, classifiers, project URLs).
+- Release docs point at the `zeroemployeeorg/zero-employee` GitHub org.
+
 ## [0.1.0] — 2026-08-08
 
 ### Added

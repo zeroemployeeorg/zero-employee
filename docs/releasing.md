@@ -19,7 +19,7 @@ Environments on the GitHub repo must be named exactly **`testpypi`** and **`pypi
 | Field | TestPyPI | PyPI (production) |
 | --- | --- | --- |
 | Project Name | `zero-employee` | `zero-employee` |
-| Owner | `sovereignagents` | `sovereignagents` |
+| Owner | `zeroemployeeorg` | `zeroemployeeorg` |
 | Repository | `zero-employee` | `zero-employee` |
 | Workflow name | `publish.yml` | `publish.yml` |
 | Environment | `testpypi` | `pypi` |
@@ -44,7 +44,7 @@ Create under **Repo → Settings → Environments** (or `gh api`):
 2. Bump `version` in `pyproject.toml`.
 3. Update `CHANGELOG.md`.
 4. Ensure CI is green (`make verify` / pytest).
-5. Commit and push to `sovereignagents/zero-employee` `main`.
+5. Commit and push to `zeroemployeeorg/zero-employee` `main`.
 
 ### TestPyPI first
 

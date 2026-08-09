@@ -139,8 +139,7 @@ def grade_learnings(fm: dict, *, text: str = "") -> list:
                 Finding(
                     HINT,
                     "hint-learnings-lesson-long",
-                    f"entry[{idx}] lesson has >3 sentences. "
-                    "Fix: compress to 3 sentences max (diary friction-parity)",
+                    f"entry[{idx}] lesson has >3 sentences. Fix: compress to 3 sentences max (diary friction-parity)",
                 )
             )
 
@@ -161,8 +160,7 @@ def grade_learnings(fm: dict, *, text: str = "") -> list:
                 Finding(
                     WARN,
                     "learnings-genre",
-                    f"entry[{idx}] genre: {genre!r} should be 'learnings'. "
-                    "Fix: set genre: learnings",
+                    f"entry[{idx}] genre: {genre!r} should be 'learnings'. Fix: set genre: learnings",
                 )
             )
 

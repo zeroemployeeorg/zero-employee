@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from .common import (
     LIFECYCLES,
@@ -108,8 +108,7 @@ def keystone_messages(fm: dict) -> list[str]:
             check = entry.get("check")
             if check is None or not str(check).strip():
                 findings.append(
-                    f"FINDING claim '{claim}' has an EMPTY check "
-                    "(needs a runnable check or 'none — <reason>')"
+                    f"FINDING claim '{claim}' has an EMPTY check (needs a runnable check or 'none — <reason>')"
                 )
     return findings
 
@@ -218,7 +217,7 @@ def grade_sow(
                         "hint-presence-check",
                         f"ledger claim '{claim}' check looks like a presence proof "
                         f"(import/ls/test -f), not behavior. Fix: replace with a gate/"
-                        f"behavioral assertion, or use check: \"none — <reason>\" for taste claims. "
+                        f'behavioral assertion, or use check: "none — <reason>" for taste claims. '
                         f"Got: {check!r}",
                     )
                 )
@@ -239,7 +238,7 @@ def grade_sow(
                 HINT,
                 "hint-noncanonical-name",
                 "filename is not <stream>-SOW-<n>-<slug>.md. "
-                "Fix: run `sow-lint --mint sow <stream> --words \"...\"` for new filings, "
+                'Fix: run `sow-lint --mint sow <stream> --words "..."` for new filings, '
                 "or `sow-lint --promote <stream-dir>` to rename legacy files",
             )
         )

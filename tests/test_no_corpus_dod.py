@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 
 from zero_employee import cli
 

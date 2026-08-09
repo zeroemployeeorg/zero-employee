@@ -53,7 +53,7 @@ def test_hint_does_not_fail_exit_code(tmp_path, capsys):
         "---\nsow: ds-6\nn: 1\nschema_rev: 17\nstatus: SHIPPED\nproject: proj\n"
         "created: 2026-08-08\nupdated: 2026-08-08\nlifecycle: CLOSEOUT-RECORD\n"
         "ledger:\n  - claim: x\n    state: SHIPPED\n    commit: abc\n"
-        '    check: \'python -c "import x"\'\n---\n\nbody\n',
+        "    check: 'python -c \"import x\"'\n---\n\nbody\n",
         encoding="utf-8",
     )
     (tmp_path / "claude-md").mkdir()

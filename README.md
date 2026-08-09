@@ -1,19 +1,67 @@
-# zero-employee
+<div align="center">
 
-Portable governance tooling for Statement-of-Work (SOW) corpora. Install the package, point it at a corpus, and use the `zeo` CLI (the `sow-lint` command is retained as a permanent alias).
+# Zero Employee Organizations (`zero-employee`)
 
-## Install
+**Portable, deterministic governance tooling and AI agent orchestration for Statement-of-Work (SOW) corpora.**
 
-```bash
-uv tool install zero-employee
-# or: pip install zero-employee
+[![PyPI version](https://img.shields.io/pypi/v/zero-employee.svg?color=blue)](https://pypi.org/project/zero-employee/)
+[![Python Version](https://img.shields.io/pypi/pyversions/zero-employee.svg)](https://pypi.org/project/zero-employee/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
+
+[Website](https://zeroemployee.org) • [Documentation](https://zeroemployee.org/docs) • [Issues](https://github.com/zeroemployeeorg/zero-employee/issues)
+
+</div>
+
+---
+
+## Overview
+
+`zero-employee` (`zeo`) is the governance layer and linter for multi-agent software organizations. It enforces deterministic schema validation, cost tracking, state board generation, and IDE/agent bridge synchronization across your entire repository fleet.
+
+```
+              ┌─────────────────────────────────┐
+              │       GOVERNANCE DOCTRINE       │
+              │       (CLAUDE.md / Rulings)     │
+              └────────────────┬────────────────┘
+                               │
+           RULINGS             │  ▲  SOWs
+        (Top-to-Bottom)        │  │ (Bottom-to-Top)
+        Mandates & Precedents  │  │ Status & Deliverables
+                               ▼  │
+              ┌────────────────┴────────────────┐
+              │       PROJECT WORKSTREAMS       │
+              │    (projects/<repo>/sow/...)    │
+              └─────────────────────────────────┘
 ```
 
-Requires Python 3.11+.
+### Key Features
+* **Deterministic SOW Linting:** Enforces strict frontmatter schemas (`sow:`, `n:`, `status:`, `restaufwand:`, `done_when:`).
+* **Zero-Clutter Scaffolding:** Clean-by-default repository and workstream generation with opt-in IDE bridges (`--cursor`, `--gemini`, `--claude`, `--agents`).
+* **Cost & Token Proxies:** Real-time token tracking (`--session-cost`, `--repo-cost`) with live rate cards.
+* **Fleet State Board (`STATE.md`):** Automatically indexes active streams, open questions, and held workstreams across all fleet repos.
 
-## Quick start
+---
 
-`zeo` discovers a corpus by walking up from the current directory looking for `claude-md/CLAUDE.md`. You can also set `ZEO_SOWS_ROOT` or pass a path.
+## Installation
+
+Install globally via [`uv`](https://github.com/astral-sh/uv) (recommended) or `pip`:
+
+```bash
+# Recommended (isolated global executable):
+uv tool install zero-employee
+
+# Standard pip install:
+pip install zero-employee
+```
+
+> **Requirements:** Python 3.11 or higher.
+
+---
+
+## Quick Start
+
+`zeo` discovers a corpus by walking up from the current directory looking for `claude-md/CLAUDE.md`. You can also set `ZEO_SOWS_ROOT` or pass an explicit path.
 
 ```bash
 # From inside a corpus (or with ZEO_SOWS_ROOT set):
@@ -21,38 +69,85 @@ zeo --board
 zeo --triage
 zeo --help
 
-# From anywhere:
+# Target a specific corpus path from anywhere:
 zeo --board /path/to/corpus
 ZEO_SOWS_ROOT=/path/to/corpus zeo --triage
 ```
 
-If no corpus is found, `zeo --board` exits non-zero with a clear message — it does not invent a board.
+*If no corpus is found, `zeo` exits non-zero with a clear error message—it never hallucinates or invents a board.*
 
-## Commands (selection)
+---
 
-| Command | Purpose |
+## Command Reference
+
+| Command / Flag | Purpose |
 | --- | --- |
-| `zeo init [path]` | Scaffold corpus marker + `CLAUDE.md` (`@import`); bridges opt-in |
-| `zeo scaffold <project> <stream>` | Create project CLAUDE.md + Rev-17 SOW |
-| `zeo bridges --cursor\|--gemini\|--claude\|--agents\|--all` | Install IDE/agent bridges only |
-| `zeo --board` | Regenerate the fleet board (`STATE.md`) |
-| `zeo --triage` | Operator worklist |
-| `zeo --digest` | Session digest |
-| `zeo --repo-cost` / `--session-cost` | Token×USD cost proxies |
-| `zeo --resync-check` / `--resync-apply` | Inherited doctrine sync (not bridges) |
-| `zeo hooks install` | Install corpus hook templates |
-| `zeo <path>` | Lint a SOW / ruling / skill file |
+| `zeo init [path]` | Scaffold corpus marker + `CLAUDE.md` (`@import`). Bridges are opt-in. |
+| `zeo scaffold <project> <stream>` | Create project `CLAUDE.md` + Rev 17 SOW draft. |
+| `zeo bridges [flags]` | Install/resync IDE and agent bridges into an existing repository. |
+| `zeo --board` | Regenerate the global fleet state board (`STATE.md`). |
+| `zeo --triage` | Display operator worklist (open questions, held streams, unread rulings). |
+| `zeo --digest` | Generate session commit digest and tree status. |
+| `zeo --repo-cost` / `--session-cost` | Calculate USD cost proxies for LLM model token usage. |
+| `zeo --resync-check` / `--resync-apply` | Check and apply inherited doctrine updates across projects. |
+| `zeo hooks install` | Install automated git pre-commit and session hook templates. |
+| `zeo <path>` | Lint a single SOW, ruling, or skill file against strict schema rules. |
 
-`sow-lint` accepts the same arguments as `zeo`.
+> **Note on Aliases:** `sow-lint` is a permanent, retained binary alias for `zeo`. All arguments and flags are identical.
 
-Bridge flags (`--cursor`, `--gemini`, `--claude`, `--agents`, `--all`) are shared by `init`, `scaffold`, and `bridges`. Default scaffolding stays clean (no IDE clutter).
+---
 
-## Documentation
+## Modular IDE & Agent Scaffolding
 
-- [Getting started](docs/getting-started.md) — from-scratch onboarding
-- [Releasing](docs/releasing.md) — versioning, changelog, TestPyPI → PyPI
-- [Contributing](CONTRIBUTING.md) — local development
+Scaffolding commands stay **clean by default** to avoid polluting repositories with unused tool directories. You explicitly pass flags to generate tool-specific bridges:
 
-## License
+```bash
+# Clean SOW scaffold (no IDE clutter):
+zeo scaffold ducktyper render-pipeline
 
-MIT
+# Add Cursor MDC rules and .cursorrules symlink:
+zeo scaffold ducktyper render-pipeline --cursor
+
+# Add Gemini support:
+zeo scaffold ducktyper render-pipeline --gemini
+
+# Install the full agent & IDE bridge suite:
+zeo scaffold ducktyper render-pipeline --all
+```
+
+Supported bridge flags: `--cursor`, `--gemini`, `--claude`, `--agents`, `--all`.
+
+---
+
+## Local Development & Testing
+
+We use `uv` and `make` for deterministic, hermetic local builds:
+
+```bash
+# Clone repository
+git clone https://github.com/zeroemployeeorg/zero-employee.git
+cd zero-employee
+
+# Setup virtualenv and install dependencies
+make setup
+
+# Run linting and test suite
+make verify
+```
+
+---
+
+## Documentation & Resources
+
+* [Getting Started Guide](docs/getting-started.md) — Step-by-step onboarding for new corpora.
+* [Release Process](docs/releasing.md) — Versioning, changelogs, and PyPI publishing.
+* [Contributing Guidelines](CONTRIBUTING.md) — Code style, test expectations, and PR rules.
+
+---
+
+## License & Community
+
+Distributed under the terms of the [MIT License](LICENSE).
+
+* **Maintainer Email:** [zeroemployeeorg@dreamhuggers.com](mailto:zeroemployeeorg@dreamhuggers.com)
+* **Organization:** [Zero Employee Organizations](https://zeroemployee.org)

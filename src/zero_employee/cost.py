@@ -667,10 +667,7 @@ def session_cost_report(
         "cache_read_tokens": usage["cache_read_tokens"],
         "cache_write_tokens": usage["cache_write_tokens"],
         "total_tokens": (
-            usage["input_tokens"]
-            + usage["output_tokens"]
-            + usage["cache_read_tokens"]
-            + usage["cache_write_tokens"]
+            usage["input_tokens"] + usage["output_tokens"] + usage["cache_read_tokens"] + usage["cache_write_tokens"]
         ),
         "usd": usd,
         "logged_usd": usage.get("logged_usd"),
