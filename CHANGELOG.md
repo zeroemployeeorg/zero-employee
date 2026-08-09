@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.5] - 2026-08-09
+
+### Added
+- **SOW Authoring Ergonomics (`zeo sow new / set / draft`):** ZEO now owns Rev-17 frontmatter serialization, numbering, and transactional writes so agents only supply semantic values without hand-writing YAML.
+- **`zeo doctor` CLI Command:** Added structural health checking and automatic repair filters for working trees and SOW drafts.
+- **Transactional Frontmatter Validation:** Rejects improper frontmatter in body content prior to file creation or modification, leaving zero partial artifacts on failure.
+
+
 ## [Unreleased]
 
 ### Added
