@@ -99,12 +99,12 @@ def test_reserve_sow_stub_exclusive(tmp_path):
     path, detail = reserve_sow_stub(tmp_path, "speechbubble", "motion diagnosis two mechanisms")
     assert path is not None
     assert path.exists()
-    assert path.name.startswith("speechbubble-SOW-1-")
+    assert path.name.startswith("speechbubble-SOW-01-")
     assert "motion-diagnosis" in path.name
     # Second reserve gets next n
     path2, _ = reserve_sow_stub(tmp_path, "speechbubble", "other slug words here")
     assert path2 is not None
-    assert path2.name.startswith("speechbubble-SOW-2-")
+    assert path2.name.startswith("speechbubble-SOW-02-")
     assert path2 != path
 
 

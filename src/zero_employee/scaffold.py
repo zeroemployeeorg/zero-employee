@@ -6,7 +6,6 @@ Self-contained: does not touch doctrine --resync-* machinery or product seats
 
 from __future__ import annotations
 
-import datetime as _dt
 import pathlib
 import re
 from collections.abc import Iterable
@@ -193,10 +192,6 @@ def init_corpus(root: pathlib.Path | str, tools: Iterable[str] | None = None) ->
     bridges = install_bridges(root, tools_set) if tools_set else {"root": str(root), "tools": [], "actions": []}
     return {"root": str(root), "created": created, "bridges": bridges}
 
-def _slugify_title(title: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
-    return slug or "initial-workstream-sow"
-
 
 def scaffold_project_stream(
     root: pathlib.Path | str,
@@ -223,35 +218,38 @@ def scaffold_project_stream(
         proj_claude.write_text(body, encoding="utf-8")
         created.append(str(proj_claude.relative_to(root)))
 
-    today = _dt.datetime.now(_dt.UTC).date().isoformat()
-    slug = _slugify_title(title)
-    filename = f"{stream_name}-SOW-{sow_num:02d}-{slug}.md"
-    sow_file = sow_dir / filename
-    if not sow_file.exists():
-        # Align field set with reserve_sow_stub (schema_rev 17).
-        sow_content = (
-            f"---\n"
-            f"sow: {stream_name}\n"
-            f"n: {sow_num}\n"
-            f"schema_rev: 17\n"
-            f"project: {project_name}\n"
-            f"status: DRAFT\n"
-            f"lifecycle: DESIGN-MEMO\n"
-            f"created: {today}\n"
-            f"updated: {today}\n"
-            f"genre: sow\n"
-            f'done_when: "Clear acceptance criteria established"\n'
-            f"restaufwand: 1\n"
-            f"sow_repo: example-org/org\n"
-            f"work_repo: example-org/{project_name}\n"
-            f"requested_by: unknown - initial scaffold\n"
-            f"---\n\n"
-            f"# SOW-{sow_num:02d}: {title}\n\n"
-            f"## Objective\n\n"
-            f"Define objective for workstream `{stream_name}`.\n"
+    from .sow_authoring import create_sow
+
+    # Greenfield wrapper: ensure project CLAUDE.md, then create via sow new substrate.
+    sow_rel = None
+    # If an explicit n is requested and that file already exists, stay idempotent.
+    from .sow_authoring import canonical_sow_filename
+
+    preview = sow_dir / canonical_sow_filename(stream_name, sow_num, title)
+    if preview.exists():
+        sow_file = preview
+        sow_rel = str(sow_file.relative_to(root))
+    else:
+        result, err = create_sow(
+            root,
+            project=project_name,
+            stream=stream_name,
+            title=title,
+            status="DRAFT",
+            lifecycle="DESIGN-MEMO",
+            done_when="Clear acceptance criteria established",
+            restaufwand=1,
+            n=sow_num,
+            requested_by="unknown - initial scaffold",
+            body=(
+                f"# SOW-{sow_num:02d}: {title}\n\n## Objective\n\nDefine objective for workstream `{stream_name}`.\n"
+            ),
         )
-        sow_file.write_text(sow_content, encoding="utf-8")
-        created.append(str(sow_file.relative_to(root)))
+        if result is None:
+            raise RuntimeError(f"scaffold SOW create failed: {err}")
+        sow_rel = result.path
+        sow_file = root / result.path
+        created.append(sow_rel)
 
     tools_set = normalize_tools(tools)
     bridges = install_bridges(proj_dir, tools_set) if tools_set else {"root": str(proj_dir), "tools": [], "actions": []}

@@ -20,6 +20,8 @@ mkdir my-org && cd my-org
 zeo init
 # optional IDE/agent bridges (opt-in; default is clean):
 zeo init --cursor --gemini          # or: zeo bridges --all
+zeo sow new ducktyper ui-refresh --title "UI Framework Refresh"
+# or greenfield wrapper (also writes project CLAUDE.md):
 zeo scaffold ducktyper ui-refresh 1 "UI Framework Refresh"
 ```
 

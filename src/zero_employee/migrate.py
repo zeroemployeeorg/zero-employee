@@ -5,12 +5,9 @@ import json
 import os
 import pathlib
 import re
-import socket
 import stat
 import subprocess
 import tempfile
-import urllib.error
-import urllib.request
 from enum import Enum
 from typing import Literal
 
@@ -405,57 +402,17 @@ def ollama_model(
     tag: str = "gemma4:latest",
     timeout: int = 180,
 ) -> str:
-    payload = json.dumps(
-        {
-            "model": tag,
-            "prompt": prompt,
-            "stream": False,
-            "format": Claim.model_json_schema(),
-            "options": {
-                "temperature": 0,
-                "seed": 23,
-            },
-        }
-    ).encode("utf-8")
+    """Claimant call via shared Ollama client (structured Claim JSON)."""
+    from .ollama_client import ollama_model as _ollama
 
-    request = urllib.request.Request(
-        "http://127.0.0.1:11434/api/generate",
-        data=payload,
-        headers={"Content-Type": "application/json"},
+    return _ollama(
+        prompt,
+        tag,
+        timeout,
+        response_format=Claim.model_json_schema(),
+        temperature=0,
+        seed=23,
     )
-
-    try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            result = json.loads(response.read().decode("utf-8"))
-            answer = result.get("response")
-
-            if not isinstance(answer, str):
-                raise RuntimeError("Ollama response has no string `response`")
-
-            return answer
-    except (
-        urllib.error.URLError,
-        TimeoutError,
-        socket.timeout,
-        json.JSONDecodeError,
-    ) as http_error:
-        # Compatibility fallback; the same typed validation still applies.
-        try:
-            result = subprocess.run(
-                ["ollama", "run", "--hidethinking", tag],
-                input=prompt,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-            )
-        except subprocess.TimeoutExpired as exc:
-            raise RuntimeError("Ollama HTTP and CLI calls timed out") from exc
-
-        if result.returncode != 0:
-            detail = result.stderr.strip()[:300]
-            raise RuntimeError(f"Ollama HTTP failed ({http_error}); CLI failed ({result.returncode}): {detail}")
-
-        return result.stdout
 
 
 def atomic_replace(

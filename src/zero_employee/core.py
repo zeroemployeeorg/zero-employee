@@ -1049,10 +1049,12 @@ _SLUG_STRIP = re.compile(r"(?i)[-_]?rev[-_]?[0-9a-z]+$")
 
 
 def canonical_name(sow, n, slug):
-    """<sow>-SOW-<n>-<slug>.md. The rev suffix is STRIPPED: rev lives in frontmatter,
-    never in the name (CLAUDE.md s5)."""
+    """<sow>-SOW-<n>-<slug>.md with zero-padded n.
+
+    The rev suffix is STRIPPED: rev lives in frontmatter, never in the name (CLAUDE.md s5).
+    """
     slug = _SLUG_STRIP.sub("", str(slug).strip("-_ ")) or "sow"
-    return f"{sow}-SOW-{n}-{slug}.md"
+    return f"{sow}-SOW-{int(n):02d}-{slug}.md"
 
 
 def collisions(target_map):
@@ -2395,8 +2397,6 @@ def reserve_sow_stub(
 
     Returns (path, detail). path is None on refusal.
     """
-    import datetime as _dt
-
     root = pathlib.Path(root).resolve()
     L = locate_stream(root, stream)
     if L["ambiguous"]:
@@ -2420,31 +2420,45 @@ def reserve_sow_stub(
         chain = base
     chain.mkdir(parents=True, exist_ok=True)
     slug = words_to_slug(words)
-    today = _dt.date.today().isoformat()
+    # Prefer projects/<project> when chain is under projects/
+    project = project_of(chain / "x.md", root)
+    if project is None and (root / "projects").is_dir():
+        projs = [p for p in (root / "projects").iterdir() if p.is_dir()]
+        if len(projs) == 1:
+            project = projs[0].name
+    project = project or "unknown"
+    from .sow_authoring import build_frontmatter, render_sow, transactional_create
+
     for attempt in range(retries):
         candidate_n = n + attempt
         name = canonical_name(stream, candidate_n, slug)
         dest = chain / name
-        body = (
-            f"---\n"
-            f"sow: {stream}\n"
-            f"n: {candidate_n}\n"
-            f"schema_rev: 17\n"
-            f"status: DRAFT\n"
-            f"lifecycle: DESIGN-MEMO\n"
-            f"created: {today}\n"
-            f"updated: {today}\n"
-            f"genre: sow\n"
-            f'done_when: "REPLACE — runnable stopping predicate"\n'
-            f"restaufwand: 1\n"
-            f"sow_repo: example-org/org\n"
-            f"work_repo: same-as-sow_repo\n"
-            f"---\n\n"
-            f"# {stream} SOW-{candidate_n}: {slug.replace('-', ' ')}\n\n"
-            f"(stub reserved by `zeo --mint sow` — replace this body)\n"
-        )
-        if _exclusive_create(dest, body):
+        title = slug.replace("-", " ")
+        try:
+            fm = build_frontmatter(
+                project=project,
+                stream=stream,
+                n=candidate_n,
+                status="DRAFT",
+                lifecycle="DESIGN-MEMO",
+                done_when="REPLACE — runnable stopping predicate",
+                restaufwand=1,
+                work_repo="same-as-sow_repo",
+                requested_by="unknown - mint stub",
+            )
+        except Exception as exc:
+            return None, str(exc)
+        body = f"# {stream} SOW-{candidate_n:02d}: {title}\n\n(stub reserved by `zeo --mint sow` — replace this body)\n"
+        content = render_sow(fm, body)
+        ok, reason, _ = transactional_create(dest, content, root=root)
+        if ok:
             return dest, f"n={candidate_n}"
+        if "collision" in reason or "already exists" in reason:
+            continue
+        # Fall back to exclusive create without lint gate for mint stubs in bare trees
+        if _exclusive_create(dest, content.decode("utf-8")):
+            return dest, f"n={candidate_n}"
+        continue
     return None, f"could not reserve after {retries} attempts starting at n={n}"
 
 
