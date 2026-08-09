@@ -83,7 +83,11 @@ ZEO_SOWS_ROOT=/path/to/corpus zeo --triage
 | Command / Flag | Purpose |
 | --- | --- |
 | `zeo init [path]` | Scaffold corpus marker + `CLAUDE.md` (`@import`). Bridges are opt-in. |
-| `zeo scaffold <project> <stream>` | Create project `CLAUDE.md` + Rev 17 SOW draft. |
+| `zeo sow new <project> <stream> --title "..."` | Create a valid Rev-17 SOW without writing YAML. |
+| `zeo sow set` / `add` / `remove` | Mutate frontmatter fields safely (ZEO re-serializes YAML). |
+| `zeo sow draft ...` | Ollama collaborative body draft; ZEO owns frontmatter. |
+| `zeo doctor PATH` / `--changed` | Actionable readiness check for one SOW (or git-changed files). |
+| `zeo scaffold <project> <stream>` | Greenfield wrapper: project `CLAUDE.md` + `sow new`. |
 | `zeo bridges [flags]` | Install/resync IDE and agent bridges into an existing repository. |
 | `zeo --board` | Regenerate the local fleet state board (`STATE.md`, gitignored). |
 | `zeo --stream-index` | Regenerate local `stream-index.md` (gitignored). |
@@ -104,7 +108,10 @@ ZEO_SOWS_ROOT=/path/to/corpus zeo --triage
 Scaffolding commands stay **clean by default** to avoid polluting repositories with unused tool directories. You explicitly pass flags to generate tool-specific bridges:
 
 ```bash
-# Clean SOW scaffold (no IDE clutter):
+# Clean SOW creation (no IDE clutter):
+zeo sow new ducktyper render-pipeline --title "Render pipeline"
+
+# Greenfield project+stream (also creates project CLAUDE.md):
 zeo scaffold ducktyper render-pipeline
 
 # Add Cursor MDC rules and .cursorrules symlink:

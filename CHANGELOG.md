@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- **SOW authoring ergonomics:** `zeo sow new|set|add|remove|draft` and `zeo doctor[--changed]`.
+  ZEO serializes Rev-17 YAML, allocates `n`/filenames, validates transactionally, and (for draft)
+  runs an Ollama body-only peer loop. Agents supply semantic values; ZEO owns governance syntax.
+- Shared `sow_authoring` write substrate + `ollama_client`; scaffold/mint reuse the serializer.
+
+### Changed
+- Canonical SOW filenames zero-pad `n` (`SOW-01`); `zeo scaffold` wraps `sow new`.
+
 ## [0.1.4] - 2026-08-09
 
 ### Added

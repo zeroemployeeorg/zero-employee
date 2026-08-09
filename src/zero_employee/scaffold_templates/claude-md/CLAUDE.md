@@ -6,6 +6,7 @@ DOC-DATE: (Rev 17, scaffold)
 
 - Single Source of Truth: doctrine under `claude-md/CLAUDE.md` (IDE entrypoints import this file).
 - All SOW documents must adhere to `schema_rev: 17`.
+- Agents provide semantic values; ZEO owns governance syntax (`zeo sow new` / `zeo sow set` — never hand-author YAML frontmatter).
 - Primary gate: `make verify` or `zeo` / `zeo` must pass before every commit.
 
 ## 2. Gate Contract

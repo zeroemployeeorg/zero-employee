@@ -769,7 +769,17 @@ USAGE
                                   CLAUDE.md (@import). Tool bridges are opt-in.
   zeo scaffold <project> <stream> [n] [title] [--cursor|--gemini|--claude|--agents|--all]
                                   Create projects/<project>/CLAUDE.md + Rev-17 SOW under
-                                  sow/<stream>/. Bridges opt-in (under the project dir).
+                                  sow/<stream>/ (wrapper around `zeo sow new`). Bridges opt-in.
+  zeo sow new <project> <stream> --title "..." [options]
+                                  Create a valid Rev-17 SOW without writing YAML.
+                                  Options: --status --done-when --restaufwand --body-from
+                                  --spec -|--json|--edit|--interactive
+  zeo sow set|add|remove FILE KEY VALUE
+                                  Mutate one frontmatter field (or list membership) safely.
+  zeo sow draft <project> <stream> --title "..." [--peer human|agent] [--prompt FILE]
+                                  Ollama body draft loop; ZEO owns frontmatter.
+  zeo doctor PATH | zeo doctor --changed
+                                  Actionable readiness check for one SOW (or git-changed files).
   zeo bridges [path] --cursor|--gemini|--claude|--agents|--all
                                   Install/refresh selected IDE/agent bridges only.
                                   Distinct from --resync-* (doctrine SHA sync).
@@ -946,6 +956,388 @@ def _cmd_bridges(argv: list[str]) -> int:
     return 0
 
 
+def _parse_sow_flags(argv: list[str]) -> tuple[list[str], dict]:
+    """Return (positionals, flags) for sow subcommands."""
+    flags: dict = {
+        "title": None,
+        "status": None,
+        "lifecycle": None,
+        "done_when": None,
+        "restaufwand": None,
+        "body_from": None,
+        "prompt": None,
+        "spec": None,
+        "json": False,
+        "edit": False,
+        "interactive": False,
+        "peer": "human",
+        "model": None,
+        "project": None,
+        "stream": None,
+        "changed": False,
+    }
+    positionals: list[str] = []
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a == "--title" and i + 1 < len(argv):
+            flags["title"] = argv[i + 1]
+            i += 2
+            continue
+        if a == "--status" and i + 1 < len(argv):
+            flags["status"] = argv[i + 1]
+            i += 2
+            continue
+        if a == "--lifecycle" and i + 1 < len(argv):
+            flags["lifecycle"] = argv[i + 1]
+            i += 2
+            continue
+        if a in ("--done-when", "--done_when") and i + 1 < len(argv):
+            flags["done_when"] = argv[i + 1]
+            i += 2
+            continue
+        if a == "--restaufwand" and i + 1 < len(argv):
+            flags["restaufwand"] = argv[i + 1]
+            i += 2
+            continue
+        if a == "--body-from" and i + 1 < len(argv):
+            flags["body_from"] = argv[i + 1]
+            i += 2
+            continue
+        if a == "--prompt" and i + 1 < len(argv):
+            flags["prompt"] = argv[i + 1]
+            i += 2
+            continue
+        if a == "--spec" and i + 1 < len(argv):
+            flags["spec"] = argv[i + 1]
+            i += 2
+            continue
+        if a == "--peer" and i + 1 < len(argv):
+            flags["peer"] = argv[i + 1]
+            i += 2
+            continue
+        if a == "--model" and i + 1 < len(argv):
+            flags["model"] = argv[i + 1]
+            i += 2
+            continue
+        if a == "--project" and i + 1 < len(argv):
+            flags["project"] = argv[i + 1]
+            i += 2
+            continue
+        if a == "--stream" and i + 1 < len(argv):
+            flags["stream"] = argv[i + 1]
+            i += 2
+            continue
+        if a == "--json":
+            flags["json"] = True
+            i += 1
+            continue
+        if a == "--edit":
+            flags["edit"] = True
+            i += 1
+            continue
+        if a == "--interactive":
+            flags["interactive"] = True
+            i += 1
+            continue
+        if a == "--changed":
+            flags["changed"] = True
+            i += 1
+            continue
+        if a.startswith("-"):
+            print(f"zeo sow: unknown flag {a}", file=sys.stderr)
+            return [], {"_error": 2}
+        positionals.append(a)
+        i += 1
+    return positionals, flags
+
+
+def _print_sow_created(result, *, as_json: bool = False) -> None:
+    import json as _json
+
+    from .sow_authoring import SCHEMA_REV
+
+    if as_json:
+        print(_json.dumps(result.model_dump(), indent=2))
+        return
+    print("Created:")
+    print(f"  {result.path}")
+    print()
+    print(f"schema_rev: {SCHEMA_REV}")
+    print(f"project: {result.project}")
+    print(f"sow: {result.sow}")
+    print(f"n: {result.n}")
+    print(f"status: {result.status}")
+    print(f"lifecycle: {result.lifecycle}")
+    print()
+    for check in result.checks:
+        print(f"✓ {check}")
+
+
+def _interactive_sow_prompts(flags: dict) -> dict:
+    from .sow_authoring import KIND_MAP
+
+    title = flags.get("title") or input("Title: ").strip()
+    print("What kind of work is this?")
+    print("  1. Design")
+    print("  2. Implementation")
+    print("  3. Finding")
+    print("  4. Handover")
+    print("  5. Closeout")
+    kind = input("> ").strip().lower() or "1"
+    status, lifecycle = KIND_MAP.get(kind, ("DESIGN", "DESIGN-MEMO"))
+    done_when = flags.get("done_when") or input("Done when:\n> ").strip()
+    rest_raw = flags.get("restaufwand") or input("Estimated remaining units:\n> ").strip() or "1"
+    return {
+        "title": title,
+        "status": status,
+        "lifecycle": lifecycle,
+        "done_when": done_when,
+        "restaufwand": rest_raw,
+    }
+
+
+def _cmd_sow(argv: list[str]) -> int:
+    import json as _json
+    import os
+
+    from .ollama_client import DEFAULT_MODEL
+    from .sow_authoring import (
+        add_list_value,
+        create_sow,
+        create_sow_from_spec,
+        draft_sow,
+        remove_list_value,
+        set_field,
+    )
+
+    if not argv:
+        print(
+            "Usage: zeo sow new|set|add|remove|draft|doctor ...",
+            file=sys.stderr,
+        )
+        return 2
+
+    sub = argv[0]
+    rest = argv[1:]
+    positionals, flags = _parse_sow_flags(rest)
+    if flags.get("_error"):
+        return 2
+
+    root = _discover_root(None) or pathlib.Path(".").resolve()
+    cwd = pathlib.Path(".").resolve()
+    if (cwd / "claude-md" / "CLAUDE.md").is_file():
+        root = cwd
+
+    if sub == "doctor":
+        return _cmd_doctor(positionals, flags, root)
+
+    if sub == "new":
+        if flags.get("spec") is not None:
+            spec_src = flags["spec"]
+            raw = sys.stdin.read() if spec_src == "-" else pathlib.Path(spec_src).read_text(encoding="utf-8")
+            spec = _json.loads(raw)
+            result, err = create_sow_from_spec(root, spec, cwd=cwd)
+            if result is None:
+                print(f"✗ SOW not written\nReason: {err}", file=sys.stderr)
+                return 1
+            _print_sow_created(result, as_json=flags["json"])
+            return 0
+
+        project = flags.get("project")
+        stream = flags.get("stream")
+        if len(positionals) >= 2:
+            project, stream = positionals[0], positionals[1]
+        elif len(positionals) == 1 and not project:
+            stream = positionals[0]
+
+        if flags.get("interactive"):
+            answers = _interactive_sow_prompts(flags)
+            flags.update(answers)
+
+        title = flags.get("title")
+        if not title:
+            print("zeo sow new: --title is required (or use --interactive / --spec)", file=sys.stderr)
+            return 2
+
+        body = None
+        if flags.get("body_from"):
+            body = pathlib.Path(flags["body_from"]).read_text(encoding="utf-8")
+
+        status = flags.get("status") or "DESIGN"
+        lifecycle = flags.get("lifecycle")
+        if flags.get("interactive") and not lifecycle:
+            lifecycle = flags.get("lifecycle")
+
+        restaufwand = flags.get("restaufwand")
+        if restaufwand is not None and str(restaufwand).isdigit():
+            restaufwand = int(restaufwand)
+
+        result, err = create_sow(
+            root,
+            project=project,
+            stream=stream,
+            title=title,
+            status=status,
+            lifecycle=lifecycle,
+            done_when=flags.get("done_when"),
+            restaufwand=restaufwand,
+            body=body,
+            cwd=cwd,
+        )
+        if result is None:
+            print(f"✗ SOW not written\nReason: {err}", file=sys.stderr)
+            return 1
+        _print_sow_created(result, as_json=flags["json"])
+        path = root / result.path
+        if flags.get("edit"):
+            editor = os.environ.get("EDITOR") or os.environ.get("VISUAL") or "vi"
+            subprocess.call([editor, str(path)])
+        elif sys.stdin.isatty() and not flags["json"]:
+            try:
+                ans = input("\nEdit body now? [Y/n] ").strip().lower()
+            except EOFError:
+                ans = "n"
+            if ans in ("", "y", "yes"):
+                editor = os.environ.get("EDITOR") or os.environ.get("VISUAL") or "vi"
+                subprocess.call([editor, str(path)])
+        return 0
+
+    if sub == "set":
+        if len(positionals) < 3:
+            print("Usage: zeo sow set FILE KEY VALUE", file=sys.stderr)
+            return 2
+        path = pathlib.Path(positionals[0]).resolve()
+        key, value = positionals[1], " ".join(positionals[2:])
+        ok, reason = set_field(path, key, value, root=root)
+        if not ok:
+            print(f"✗ SOW not updated\nReason: {reason}", file=sys.stderr)
+            return 1
+        print(f"Updated {path}: {key}={value}")
+        return 0
+
+    if sub == "add":
+        if len(positionals) < 3:
+            print("Usage: zeo sow add FILE KEY VALUE", file=sys.stderr)
+            return 2
+        path = pathlib.Path(positionals[0]).resolve()
+        key, value = positionals[1], " ".join(positionals[2:])
+        ok, reason = add_list_value(path, key, value, root=root)
+        if not ok:
+            print(f"✗ SOW not updated\nReason: {reason}", file=sys.stderr)
+            return 1
+        print(f"Added {value!r} to {key} in {path}")
+        return 0
+
+    if sub == "remove":
+        if len(positionals) < 3:
+            print("Usage: zeo sow remove FILE KEY VALUE", file=sys.stderr)
+            return 2
+        path = pathlib.Path(positionals[0]).resolve()
+        key, value = positionals[1], " ".join(positionals[2:])
+        ok, reason = remove_list_value(path, key, value, root=root)
+        if not ok:
+            print(f"✗ SOW not updated\nReason: {reason}", file=sys.stderr)
+            return 1
+        print(f"Removed {value!r} from {key} in {path}")
+        return 0
+
+    if sub == "draft":
+        project = flags.get("project")
+        stream = flags.get("stream")
+        if len(positionals) >= 2:
+            project, stream = positionals[0], positionals[1]
+        title = flags.get("title")
+        if not title and flags["peer"] == "human":
+            print("zeo sow draft: --title is required", file=sys.stderr)
+            return 2
+        seed = ""
+        if flags.get("prompt"):
+            seed = pathlib.Path(flags["prompt"]).read_text(encoding="utf-8")
+        restaufwand = flags.get("restaufwand")
+        if restaufwand is not None and str(restaufwand).isdigit():
+            restaufwand = int(restaufwand)
+        result, err = draft_sow(
+            root,
+            project=project,
+            stream=stream,
+            title=title or "Draft SOW",
+            status=flags.get("status") or "DESIGN",
+            done_when=flags.get("done_when"),
+            restaufwand=restaufwand,
+            peer=flags.get("peer") or "human",
+            model_tag=flags.get("model") or DEFAULT_MODEL,
+            seed_prompt=seed,
+        )
+        if result is None:
+            print(f"✗ SOW not written\nReason: {err}", file=sys.stderr)
+            return 1
+        if flags["json"]:
+            _print_sow_created(result, as_json=True)
+        return 0
+
+    print(f"zeo sow: unknown subcommand {sub!r}", file=sys.stderr)
+    return 2
+
+
+def _cmd_doctor(argv: list[str] | None = None, flags: dict | None = None, root: pathlib.Path | None = None) -> int:
+    from .sow_authoring import doctor_file, git_changed_markdown
+
+    if flags is not None and root is not None:
+        argv_positionals = argv or []
+        argv_flags = flags
+        argv_root = root
+    else:
+        argv_positionals, argv_flags = _parse_sow_flags(argv or [])
+        if argv_flags.get("_error"):
+            return 2
+        argv_root = _discover_root(None) or pathlib.Path(".").resolve()
+        cwd = pathlib.Path(".").resolve()
+        if (cwd / "claude-md" / "CLAUDE.md").is_file():
+            argv_root = cwd
+
+    paths: list[pathlib.Path] = []
+    if argv_flags.get("changed"):
+        paths = git_changed_markdown(argv_root)
+        if not paths:
+            print("doctor: no changed SOW/ruling markdown")
+            return 0
+    elif argv_positionals:
+        paths = [pathlib.Path(p).resolve() for p in argv_positionals]
+    else:
+        print("Usage: zeo doctor PATH | zeo doctor --changed", file=sys.stderr)
+        return 2
+
+    exit_rc = 0
+    for path in paths:
+        ready, oks, fails = doctor_file(path, root=argv_root)
+        if ready:
+            print(f"SOW READY — {path}")
+            for line in oks:
+                print(f"✓ {line}")
+        else:
+            exit_rc = 1
+            print(f"SOW NOT READY — {path}")
+            for line in oks:
+                print(f"✓ {line}")
+            for line in fails:
+                print(f"✗ {line}")
+        if len(paths) > 1:
+            print()
+    return exit_rc
+
+
+def _cmd_artifact(argv: list[str]) -> int:
+    """Thin alias: zeo artifact set → zeo sow set (SOW genre)."""
+    if not argv:
+        print("Usage: zeo artifact set FILE KEY VALUE", file=sys.stderr)
+        return 2
+    if argv[0] == "set":
+        return _cmd_sow(["set", *argv[1:]])
+    print(f"zeo artifact: unknown subcommand {argv[0]!r}", file=sys.stderr)
+    return 2
+
+
 def _print_hooks_install(info: dict) -> None:
     print(f"HOOKS-INSTALL: wrote {len(info['written'])} template(s) under tools/hooks/")
     for w in info["written"]:
@@ -1012,6 +1404,12 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_scaffold(args[1:])
     if args and args[0] == "bridges":
         return _cmd_bridges(args[1:])
+    if args and args[0] == "sow":
+        return _cmd_sow(args[1:])
+    if args and args[0] == "doctor":
+        return _cmd_doctor(args[1:])
+    if args and args[0] == "artifact":
+        return _cmd_artifact(args[1:])
     backfill_project = None
     locate_stream_name = None
     want_progress = None

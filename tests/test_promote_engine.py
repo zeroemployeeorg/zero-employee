@@ -133,8 +133,8 @@ def test_a_REAL_collision_is_reported_never_resolved():
 
 
 def test_canonical_name_strips_the_rev_suffix():
-    assert canonical_name("seam", 9, "brand-engine-seam-Rev9") == "seam-SOW-9-brand-engine-seam.md"
-    assert canonical_name("d2", 3, "watcher-rev-b") == "d2-SOW-3-watcher.md"
+    assert canonical_name("seam", 9, "brand-engine-seam-Rev9") == "seam-SOW-09-brand-engine-seam.md"
+    assert canonical_name("d2", 3, "watcher-rev-b") == "d2-SOW-03-watcher.md"
 
 
 def test_predecessor_is_SEQUENCE_not_supersession():
