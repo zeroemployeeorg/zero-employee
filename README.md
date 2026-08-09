@@ -86,6 +86,9 @@ ZEO_SOWS_ROOT=/path/to/corpus zeo --triage
 | `zeo sow new <project> <stream> --title "..."` | Create a valid Rev-17 SOW without writing YAML. |
 | `zeo sow set` / `add` / `remove` | Mutate frontmatter fields safely (ZEO re-serializes YAML). |
 | `zeo sow draft ...` | Ollama collaborative body draft; ZEO owns frontmatter. |
+| `zeo intake "…"` / `new` | Frictionless intent capture (no YAML; status OPEN). |
+| `zeo intake mission` / `propose` / `promote` | Coding-agent protocol: investigate → grounded proposal → SOW. |
+| `zeo sow from-intake FILE` | Lower-level alias for `zeo intake promote`. |
 | `zeo doctor PATH` / `--changed` | Actionable readiness check for one SOW (or git-changed files). |
 | `zeo scaffold <project> <stream>` | Greenfield wrapper: project `CLAUDE.md` + `sow new`. |
 | `zeo bridges [flags]` | Install/resync IDE and agent bridges into an existing repository. |

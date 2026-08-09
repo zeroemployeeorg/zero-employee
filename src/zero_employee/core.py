@@ -564,6 +564,18 @@ def lint_file(
 
         lf = grade_learnings(fm, text=text)
         return ("FAIL" if any(f.severity == ERROR for f in lf) else "PASS"), lf
+    if genre == "intake":
+        from .schemas import grade_intake
+
+        lines = text.splitlines(keepends=True)
+        body = text
+        if lines and lines[0].strip() == "---":
+            for i in range(1, len(lines)):
+                if lines[i].strip() == "---":
+                    body = "".join(lines[i + 1 :])
+                    break
+        inf = grade_intake(fm, body=body, commit_mode=commit_mode)
+        return ("FAIL" if any(f.severity == ERROR for f in inf) else "PASS"), inf
     if genre in _SKIP_GENRES:
         return "SKIP", []
     if genre != "sow":
@@ -3494,9 +3506,11 @@ def flat_dark_files(sow_root):
 def intake_open_rows(root):
     """doctrine item 3: an `intake/` file with `status: OPEN` renders on
     `--triage` as an OPEN board row, per the ratified intake/README.md ("AN
-    UNCONVERTED INTAKE RENDERS AS AN OPEN BOARD ROW"). CHARTERED / DECLINED /
-    SUPERSEDED do not render — converted or closed intent is not the operator's
-    open worklist. This is a PROJECTION, not evidence (doctrine): no SOW or
+    UNCONVERTED INTAKE RENDERS AS AN OPEN BOARD ROW").
+
+    Canonical closed statuses: PROMOTED / DUPLICATE / REJECTED / PARKED.
+    Legacy aliases still closed for triage: CHARTERED→PROMOTED, DECLINED→REJECTED,
+    SUPERSEDED→DUPLICATE. This is a PROJECTION, not evidence (doctrine): no SOW or
     ruling may cite a board row as proof, only the intake file itself.
 
     `intake/` sits at the repo root, not under any `<project>/sow/`, so
@@ -3504,6 +3518,8 @@ def intake_open_rows(root):
     (core.py:1888) — this is a deliberately separate, narrow walk of one
     directory, not a fix to board_rows' stream-shaped contract.
     """
+    from .schemas.intake import normalize_intake_status
+
     root = pathlib.Path(root)
     d = root / "intake"
     out = []
@@ -3515,12 +3531,12 @@ def intake_open_rows(root):
             continue
         if str(fm.get("genre", "")).strip().lower() != "intake":
             continue
-        if str(fm.get("status", "")).strip().upper() != "OPEN":
+        if normalize_intake_status(fm.get("status")) != "OPEN":
             continue
         out.append(
             {
-                "intake": str(fm.get("intake") or f.stem),
-                "project": str(fm.get("project") or "-"),
+                "intake": str(fm.get("id") or fm.get("intake") or f.stem),
+                "project": str(fm.get("project_hint") or fm.get("project") or "-"),
                 "created": str(fm.get("created") or "?"),
                 "file": f.name,
             }

@@ -12,6 +12,7 @@ from .common import (
     STATUS_WORKING,
     findings_from_validation_error,
 )
+from .intake import grade_intake, normalize_intake_status
 from .learnings import grade_learnings
 from .ruling import grade_ruling
 from .sow import grade_sow, keystone_messages
@@ -23,8 +24,10 @@ __all__ = [
     "STATUS_WORKING",
     "findings_from_validation_error",
     "grade_charter",
+    "grade_intake",
     "grade_learnings",
     "grade_ruling",
     "grade_sow",
     "keystone_messages",
+    "normalize_intake_status",
 ]
