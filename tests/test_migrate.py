@@ -287,7 +287,7 @@ def test_assemble_writes_unknown_for_absent_ground():
     assert fm.created == migrate.UNKNOWN
     assert fm.updated == migrate.UNKNOWN
     assert fm.schema_rev == 17
-    assert "sow-lint 1.0.0" in fm.migrated_by
+    assert "zeo 1.0.0" in fm.migrated_by
 
 
 # ── atomic_replace ────────────────────────────────────────────────────
@@ -372,7 +372,7 @@ def test_happy_path_writes_and_never_touches_the_body(tmp_path):
     assert out == "MIGRATED", detail
     text = f.read_text(encoding="utf-8")
     assert text.endswith(body)
-    assert "migrated_by: gemma4:latest · 2026-07-23 · sow-lint 0.11.0" in text
+    assert "migrated_by: gemma4:latest · 2026-07-23 · zeo 0.11.0" in text
     assert "lifecycle: DECISION-RECORD" in text
     assert migrate.UNKNOWN in text
 

@@ -1,6 +1,6 @@
 # Dated Anthropic API list prices (USD per million tokens).
 # Source: https://platform.claude.com/docs/en/about-claude/pricing
-# These are DERIVED estimates for sow-lint reporting — not invoices.
+# These are DERIVED estimates for zeo reporting — not invoices.
 # Update as_of when you refresh from the official table.
 
 as_of = "2026-08-08"

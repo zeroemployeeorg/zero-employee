@@ -6,11 +6,11 @@ DOC-DATE: (Rev 17, scaffold)
 
 - Single Source of Truth: doctrine under `claude-md/CLAUDE.md` (IDE entrypoints import this file).
 - All SOW documents must adhere to `schema_rev: 17`.
-- Primary gate: `make verify` or `zeo` / `sow-lint` must pass before every commit.
+- Primary gate: `make verify` or `zeo` / `zeo` must pass before every commit.
 
 ## 2. Gate Contract
 
-Run `make verify` (or `zeo <path>` / `sow-lint <path>`) to execute format-checks, linting, and tests.
+Run `make verify` (or `zeo <path>` / `zeo <path>`) to execute format-checks, linting, and tests.
 
 ## 3. SOW Frontmatter (Rev 17)
 

@@ -1,6 +1,6 @@
 """RULING-216 s0/s1: check_ruling_corpus existed, was unit-tested, and was never reachable
 from any real invocation - not `--commit-check` (expected: a single staged file's files_fm
-can never hold two files), and not an ordinary full-corpus `sow-lint <dir>` run either,
+can never hold two files), and not an ordinary full-corpus `zeo <dir>` run either,
 because nothing called it. Wiring it into the corpus-level pass alongside check_corpus
 surfaced a SECOND bug: its return dict was keyed by bare filename while the merge target
 (per_file) is keyed by full path, so a naive wire-in silently dropped every finding into a

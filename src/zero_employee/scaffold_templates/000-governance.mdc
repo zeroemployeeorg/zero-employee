@@ -11,7 +11,7 @@ Strictly follow all rules and procedures defined in `@CLAUDE.md`.
 ## Execution Rules
 
 1. Before declaring any code/SOW task finished or submitting a commit, run:
-   `make verify` (or `zeo` / `sow-lint` on the changed paths).
-2. Never bypass a failing gate or ignore `sow-lint` / `zeo` warnings/errors.
+   `make verify` (or `zeo` / `zeo` on the changed paths).
+2. Never bypass a failing gate or ignore `zeo` / `zeo` warnings/errors.
 3. Obey SOW frontmatter rules (`schema_rev: 17`, `status:`, `restaufwand:`, `done_when:`).
 4. Do not mutate historical SOW bodies or closed rulings.

@@ -106,10 +106,10 @@ def test_the_banner_states_the_REAL_version_not_a_hardcoded_string(tmp_path, cap
     # the version as a parameter and asserts on that, so no bump can reach it.
     from importlib.metadata import version as _pkg_version
 
-    # BOTH distribution names ship: zero-employee is the package, sow-lint is retained
+    # BOTH distribution names ship: zero-employee is the package, zeo is retained
     # as a second console script for 227 immutable references (RULING-093 legacy_name).
     _ver = None
-    for _n in ("zero-employee", "sow-lint"):
+    for _n in ("zero-employee", "zeo"):
         try:
             _ver = _pkg_version(_n)
             break

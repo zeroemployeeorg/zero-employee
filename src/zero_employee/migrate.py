@@ -23,12 +23,7 @@ from .core import (
     migrate_check,
     project_of,
 )
-from .schemas.common import (  # noqa: F401
-    LIFECYCLES,
-    STATUS_ENUM,
-    STATUS_RESTING,
-    STATUS_WORKING,
-)
+from .schemas.common import LIFECYCLES, STATUS_RESTING, STATUS_WORKING
 
 
 UNKNOWN = "unknown - pre-schema prose"
@@ -361,7 +356,7 @@ def assemble_frontmatter(
         sow_repo="example-org/org",
         work_repo=UNKNOWN,
         requested_by=UNKNOWN,
-        migrated_by=f"{tag} · {today.isoformat()} · sow-lint {version}",
+        migrated_by=f"{tag} · {today.isoformat()} · zeo {version}",
     )
 
 
@@ -655,7 +650,7 @@ def migrate_render(path, tag=None, root=None):
     from .core import find_canonical_claude_md
 
     ver = "unknown"
-    for package_name in ("zero-employee", "sow-lint"):
+    for package_name in ("zero-employee", "zeo"):
         try:
             from importlib.metadata import version as package_version
 
@@ -666,7 +661,7 @@ def migrate_render(path, tag=None, root=None):
 
     path = pathlib.Path(path)
     if not path.is_file():
-        print(f"sow-lint: path does not exist: {path}")
+        print(f"zeo: path does not exist: {path}")
         return 2
 
     if root is None:
@@ -690,3 +685,6 @@ def migrate_render(path, tag=None, root=None):
             "are navigation until a verifier samples this file."
         )
     return 0 if outcome in ("MIGRATED", "ALREADY-SCHEMA") else 1
+
+
+__all__ = ["LIFECYCLES", "STATUS_RESTING", "STATUS_WORKING", "validate_claim", "Claim"]

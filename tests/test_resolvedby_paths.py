@@ -10,7 +10,7 @@ RULING-214 s6 item 1: the `superseded-by` kind had the SAME hardcoded-`ducktyper
 unfixed when the `ruling` kind above it was. Proven before the fix: docs-sort/SOW-46's
 `resolved_by: "superseded-by: SOW-49"` returned "no such SOW in stream" while
 projects/governance-layer/sow/docs-sort/DOCS-SORT-SOW-49-v1-shipped.md existed on disk.
-Also: a lexically-relative root (`Path(".")`, what `sow-lint --triage .` passes) broke the
+Also: a lexically-relative root (`Path(".")`, what `zeo --triage .` passes) broke the
 `commit:` kind's `root.parent / <repo>` sibling-repo lookup, because `Path(".").parent`
 is `"."` again, not the real parent directory - fixed by resolving root once at entry.
 """

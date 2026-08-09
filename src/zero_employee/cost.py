@@ -1,4 +1,4 @@
-"""Session and repo cost proxies for sow-lint.
+"""Session and repo cost proxies for zeo.
 
 Two products share one rate table and one token estimator:
 

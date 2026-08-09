@@ -3,7 +3,7 @@
 "Fold it in, do not rewrite the bounding logic" (the coordinator's own instruction) -
 tools/hooks/zeo-digest.sh lives in the SIBLING org repo, not here, and this port is
 verified against ITS ACTUAL BYTES on disk, not against memory of what it does. If the
-sibling repo isn't present (a CI checkout of sow-lint alone, say), the direct-comparison
+sibling repo isn't present (a CI checkout of zeo alone, say), the direct-comparison
 tests skip rather than fabricate a result; the structural tests below them do not depend
 on the sibling repo at all and always run.
 """

@@ -238,8 +238,8 @@ def grade_sow(
                 HINT,
                 "hint-noncanonical-name",
                 "filename is not <stream>-SOW-<n>-<slug>.md. "
-                'Fix: run `sow-lint --mint sow <stream> --words "..."` for new filings, '
-                "or `sow-lint --promote <stream-dir>` to rename legacy files",
+                'Fix: run `zeo --mint sow <stream> --words "..."` for new filings, '
+                "or `zeo --promote <stream-dir>` to rename legacy files",
             )
         )
 

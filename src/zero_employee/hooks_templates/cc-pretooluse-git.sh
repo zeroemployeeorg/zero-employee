@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # PreToolUse:Bash — advisory warn before git commit/push (pathspec / multi-stream).
-# Installed by: sow-lint hooks install
+# Installed by: zeo hooks install
 set -uo pipefail
 INPUT=$(cat 2>/dev/null || true)
 case "$INPUT" in

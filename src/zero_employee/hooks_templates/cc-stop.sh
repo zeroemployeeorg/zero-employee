@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# Stop. Advisory: a blocked stop strands work. Logs session cost via sow-lint (no local rates).
-# Installed by: sow-lint hooks install
+# Stop. Advisory: a blocked stop strands work. Logs session cost via zeo (no local rates).
+# Installed by: zeo hooks install
 set -uo pipefail
 LOG=tools/stream-instruments/session-costs.jsonl
 INPUT=$(cat 2>/dev/null || true)
 mkdir -p "$(dirname "$LOG")"
 
 SOWLINT=""
-for c in "$(command -v sow-lint 2>/dev/null || true)" \
-         "$HOME/.local/bin/sow-lint" \
-         "$HOME/.local/share/uv/tools/sow-lint/bin/sow-lint" \
-         "$HOME/.local/share/uv/tools/zero-employee/bin/sow-lint"; do
+for c in "$(command -v zeo 2>/dev/null || true)" \
+         "$HOME/.local/bin/zeo" \
+         "$HOME/.local/share/uv/tools/zeo/bin/zeo" \
+         "$HOME/.local/share/uv/tools/zero-employee/bin/zeo"; do
   [ -n "$c" ] && [ -x "$c" ] && { SOWLINT="$c"; break; }
 done
 

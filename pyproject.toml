@@ -53,11 +53,6 @@ Changelog = "https://github.com/zeroemployeeorg/zero-employee/releases"
 
 [project.scripts]
 zeo = "zero_employee.cli:main"
-# sow-lint is RETAINED, never deprecated. 227 IMMUTABLE references name it - 64 in landed
-# rulings, 163 in filed SOWs - and their check: fields must stay RUNNABLE (RULING-004,
-# s5 append-dont-revert). Dropping it would make the corpus own verification claims
-# unrunnable in one commit. RULING-093 legacy_name reasoning, applied to a command.
-sow-lint = "zero_employee.cli:main"
 
 # ── Build System Configuration ───────────────────────────────────────────
 [build-system]

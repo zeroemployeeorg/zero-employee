@@ -5,7 +5,7 @@ per-file corpus block. This was CLI-verified but never unit-tested; now it is.""
 from zero_employee.cli import main
 
 # main() takes a BARE arg list (no program name at [0]);
-# only sys.argv is stripped. Do not prepend "sow-lint" (DS5-DIAG-262).
+# only sys.argv is stripped. Do not prepend "zeo" (DS5-DIAG-262).
 
 GOV_MARKER = "GOVERNANCE (graded first"
 CORPUS_MARKERS = ["\nWARN: ", "\nFAIL: "]

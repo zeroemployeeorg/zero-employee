@@ -96,7 +96,7 @@ def grade_ruling(
                     "ruling-below-org-band",
                     f"RULING-{nnn} declares scope: org and is numbered below 200 - doctrine "
                     "reserves 200+ for org-scope rulings filed from that ruling forward. "
-                    'Fix: use `sow-lint --mint ruling --words "..."` for the next free id',
+                    'Fix: use `zeo --mint ruling --words "..."` for the next free id',
                 )
             )
 

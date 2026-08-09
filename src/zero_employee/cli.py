@@ -1,4 +1,4 @@
-"""Command-line entry point for sow-lint (v0.3 — keystone + identity + governance).
+"""Command-line entry point for zeo (v0.3 — keystone + identity + governance).
 
 --skill <path> checks the sow-authoring skill's era first (Fold 1, governance-docs-first):
 the currency-enforcer is graded before the corpus it governs.
@@ -99,7 +99,7 @@ def _version():
     """The REAL installed version. A hardcoded banner string printed v0.4 against a
     0.10.0 wheel and caused stale-binary false alarms all week (doctrine) -
     including ten blocks lost at 0.9.0 and one of mine at example-stream-PROV-19."""
-    for _n in ("zero-employee", "sow-lint"):
+    for _n in ("zero-employee", "zeo"):
         try:
             from importlib.metadata import version
 
@@ -122,10 +122,10 @@ def _discover_root(explicit):
     # Ergonomics: --board and --inbox should NOT require a path. Resolve in order:
     # (1) an explicit positional if given; (2) walk UP from cwd to a dir containing
     # claude-md/CLAUDE.md (the sows-repo marker the linter already keys on); (3) the
-    # ZEO_SOWS_ROOT env var. A stream runs `sow-lint --inbox example-stream` from anywhere.
+    # ZEO_SOWS_ROOT env var. A stream runs `zeo --inbox example-stream` from anywhere.
     #
     # doctrine(a): an explicit positional used to be returned VERBATIM, unvalidated -
-    # `sow-lint --mint ruling org-master`, run from INSIDE org-master, silently built the
+    # `zeo --mint ruling org-master`, run from INSIDE org-master, silently built the
     # nonexistent path `org-master/org-master` and every downstream glob against it came
     # back empty (0 ruling homes) with no error, which is what let the hardcoded 200 floor
     # (item b) win uncontested. An explicit arg now gets the SAME walk-up as cwd/env below -
@@ -512,7 +512,7 @@ def _mint(root, kind, stream, words: str | None = None) -> int:
     if kind == "sow":
         if not stream:
             print(
-                "sow-lint --mint sow <stream>: a stream name is required",
+                "zeo --mint sow <stream>: a stream name is required",
                 file=sys.stderr,
             )
             return 2
@@ -551,7 +551,7 @@ def _mint(root, kind, stream, words: str | None = None) -> int:
         )
         return 0
     print(
-        f"sow-lint --mint: unknown kind {kind!r} - expected 'ruling' or 'sow'",
+        f"zeo --mint: unknown kind {kind!r} - expected 'ruling' or 'sow'",
         file=sys.stderr,
     )
     return 2
@@ -739,19 +739,19 @@ def _digest(root, since) -> int:
 
 
 _USAGE = """zeo (zero-employee) - portable SOW governance tooling
-  Alias: sow-lint (retained forever for corpus check: fields).
+  Alias: zeo (retained forever for corpus check: fields).
 
 USAGE
-  sow-lint <file-or-dir>          Lint a SOW / ruling / boot doc (grades it against canonical).
-  sow-lint --board [path]         Write STATE.md - the fleet board. Path optional (auto-found).
-  sow-lint --triage [path]        The operator worklist: who needs a ruling, a successor, unsticking.
-  sow-lint --promote <stream-dir>  Plan the canonical renames (dry-run, writes nothing).
-  sow-lint --resync-check <upstream> [target]
+  zeo <file-or-dir>          Lint a SOW / ruling / boot doc (grades it against canonical).
+  zeo --board [path]         Write STATE.md - the fleet board. Path optional (auto-found).
+  zeo --triage [path]        The operator worklist: who needs a ruling, a successor, unsticking.
+  zeo --promote <stream-dir>  Plan the canonical renames (dry-run, writes nothing).
+  zeo --resync-check <upstream> [target]
                                   Report CURRENT / STALE / SKIP per inherited file.
-  sow-lint --resync-apply <upstream> [target]
+  zeo --resync-apply <upstream> [target]
                                   RE-DERIVE inherited files (UPSTREAM-SHA + transforms).
                                   Skips locally authored files. Never commits or pushes.
-  sow-lint hooks install [path]   Write tools/hooks templates that call sow-lint; install
+  zeo hooks install [path]   Write tools/hooks templates that call zeo; install
                                   .git/hooks/pre-commit. Stop uses --session-cost (no rates).
   zeo init [path] [--cursor|--gemini|--claude|--agents|--all]
                                   Scaffold a corpus: claude-md/CLAUDE.md marker + root
@@ -762,28 +762,28 @@ USAGE
   zeo bridges [path] --cursor|--gemini|--claude|--agents|--all
                                   Install/refresh selected IDE/agent bridges only.
                                   Distinct from --resync-* (doctrine SHA sync).
-  sow-lint --inbox <stream> [path]
+  zeo --inbox <stream> [path]
                                   Show ONE stream's open questions + rulings that answered it.
-                                  Path optional - run it from anywhere: sow-lint --inbox example-stream
-  sow-lint --commit-check-corpus [path]
+                                  Path optional - run it from anywhere: zeo --inbox example-stream
+  zeo --commit-check-corpus [path]
                                   doctrine(1): a corpus-level pass, once per commit, that
                                   catches a same-tree ruling-number collision --commit-check's
                                   per-file gate cannot see. Does NOT catch the cross-seat race
                                   at either individual commit - the bound is in its own --help
                                   text and in the code, not just this ruling.
-  sow-lint --ruling-index [path]  doctrine(2)/s4: regenerate ruling-index.md WHOLE -
+  zeo --ruling-index [path]  doctrine(2)/s4: regenerate ruling-index.md WHOLE -
                                   every ruling integer's current owner, plus a TOMBSTONE row
                                   for any integer a `minted_as:` field renumbered away from.
                                   Navigation, not evidence (same caveat as stream-index.md).
-  sow-lint --mint ruling [path]   doctrine(3): the next free ORG-SCOPE ruling integer,
+  zeo --mint ruling [path]   doctrine(3): the next free ORG-SCOPE ruling integer,
                                   read live off disk. NOT reserved - a concurrent peer can
                                   claim the same one; the race limitation prints on every call.
-  sow-lint --mint sow <stream> [path]
+  zeo --mint sow <stream> [path]
                                   The next SOW n: for one stream (same read locate_stream
                                   already does). Same race limitation, printed every call.
-  sow-lint --stream-index [path]  Write stream-index.md - a stream id resolves to a path
+  zeo --stream-index [path]  Write stream-index.md - a stream id resolves to a path
                                   (doctrine). Regenerated WHOLE on every run.
-  sow-lint --digest [since] [path]
+  zeo --digest [since] [path]
                                   What happened in a session, read-only, pasteable - folds
                                   in tools/hooks/zeo-digest.sh, same bounding logic (one
                                   author's commits since the last commit by someone else,
@@ -943,12 +943,12 @@ def main(argv: list[str] | None = None) -> int:
         path = args[2] if len(args) > 2 and not str(args[2]).startswith("-") else None
         root = _discover_root(path)
         if root is None:
-            print("sow-lint hooks install: run from inside the corpus (or pass a path)", file=sys.stderr)
+            print("zeo hooks install: run from inside the corpus (or pass a path)", file=sys.stderr)
             return 2
         try:
             info = hooks_install(root)
         except Exception as e:
-            print(f"sow-lint hooks install: {e}", file=sys.stderr)
+            print(f"zeo hooks install: {e}", file=sys.stderr)
             return 2
         print(f"HOOKS-INSTALL: wrote {len(info['written'])} template(s) under tools/hooks/")
         for w in info["written"]:
@@ -1150,12 +1150,12 @@ def main(argv: list[str] | None = None) -> int:
                 i += 1
             root = _discover_root(path)
             if root is None:
-                print("sow-lint --hooks-install: run from inside the corpus", file=sys.stderr)
+                print("zeo --hooks-install: run from inside the corpus", file=sys.stderr)
                 return 2
             try:
                 info = hooks_install(root)
             except Exception as e:
-                print(f"sow-lint --hooks-install: {e}", file=sys.stderr)
+                print(f"zeo --hooks-install: {e}", file=sys.stderr)
                 return 2
             print(f"HOOKS-INSTALL: wrote {len(info['written'])} template(s) under tools/hooks/")
             for w in info["written"]:
@@ -1210,14 +1210,14 @@ def main(argv: list[str] | None = None) -> int:
     # these five verbs FAILED OPEN from a wrong cwd ("0 streams") no matter what a caller
     # passed - removing a hook's OWN "." argument (cc-session-start.sh) fixed NOTHING here,
     # because the fallback was baked into this file, not the caller. MEASURED before this
-    # fix: `cd /tmp && sow-lint --restaufwand` (zero args) already printed "0 of 0" instead
+    # fix: `cd /tmp && zeo --restaufwand` (zero args) already printed "0 of 0" instead
     # of refusing, identically to `--restaufwand .` - proven wrong by the ONE verb that WAS
     # already correct (`--triage`, zero args, correctly printed "couldn't find the sows
     # repo"). Now `else None`, matching that correct sibling exactly.
     if want_restauf is not None:
         r = _discover_root(positional[0] if positional else None)
         if r is None:
-            print("sow-lint --restaufwand: run from inside the corpus", file=sys.stderr)
+            print("zeo --restaufwand: run from inside the corpus", file=sys.stderr)
             return 2
         rows = restaufwand(r, want_restauf or None)
         order = {
@@ -1247,15 +1247,15 @@ def main(argv: list[str] | None = None) -> int:
     if want_kosten is not None:
         r = _discover_root(positional[0] if positional else None)
         if r is None:
-            print("sow-lint --kosten: run from inside the corpus", file=sys.stderr)
+            print("zeo --kosten: run from inside the corpus", file=sys.stderr)
             return 2
         if count_via not in ("local", "anthropic"):
-            print(f"sow-lint --count-via: expected local|anthropic, got {count_via!r}", file=sys.stderr)
+            print(f"zeo --count-via: expected local|anthropic, got {count_via!r}", file=sys.stderr)
             return 2
         try:
             rates = get_model_rates(model_tag)
         except UnknownModelError as e:
-            print(f"sow-lint --kosten: {e}", file=sys.stderr)
+            print(f"zeo --kosten: {e}", file=sys.stderr)
             return 2
         samples = fixed_tax_sample_texts(r) if (want_calibrate or count_via == "anthropic") else None
         # Full-tree Anthropic is out of v1: --count-via anthropic on --kosten means calibrate.
@@ -1268,7 +1268,7 @@ def main(argv: list[str] | None = None) -> int:
                 calibrate_samples=samples,
             )
         except Exception as e:
-            print(f"sow-lint --kosten: estimator failed: {e}", file=sys.stderr)
+            print(f"zeo --kosten: estimator failed: {e}", file=sys.stderr)
             return 2
         K = kosten(r, want_kosten or None, estimate=estimate)
         W = waste_report(r, want_kosten or None, estimate=estimate)
@@ -1315,21 +1315,21 @@ def main(argv: list[str] | None = None) -> int:
             print("    {:<20} n{:<4} ~{:>6}  {}".format(x["stream"], x["n"], x["tokens"], ",".join(x["kinds"])))
         print("  INVESTMENT - recon, checks, reading the source - is NOT minimised (doctrine).")
         print("  NO TOKEN TARGET IS EVER SET ON A STREAM. A SELF-CORRECTION IS NEVER WASTE.")
-        print("  SESSION tokens: use sow-lint --session-cost (transcript / session-costs.jsonl).")
+        print("  SESSION tokens: use zeo --session-cost (transcript / session-costs.jsonl).")
         return 0
 
     if want_repo_cost is not None:
         root = pathlib.Path(want_repo_cost).resolve() if want_repo_cost else pathlib.Path.cwd().resolve()
         if not root.exists():
-            print(f"sow-lint --repo-cost: path not found: {root}", file=sys.stderr)
+            print(f"zeo --repo-cost: path not found: {root}", file=sys.stderr)
             return 2
         if count_via not in ("local", "anthropic"):
-            print(f"sow-lint --count-via: expected local|anthropic, got {count_via!r}", file=sys.stderr)
+            print(f"zeo --count-via: expected local|anthropic, got {count_via!r}", file=sys.stderr)
             return 2
         try:
             rates = get_model_rates(model_tag)
         except UnknownModelError as e:
-            print(f"sow-lint --repo-cost: {e}", file=sys.stderr)
+            print(f"zeo --repo-cost: {e}", file=sys.stderr)
             return 2
         calibrate = want_calibrate or count_via == "anthropic"
         samples = None
@@ -1357,7 +1357,7 @@ def main(argv: list[str] | None = None) -> int:
                 calibrate_samples=samples,
             )
         except Exception as e:
-            print(f"sow-lint --repo-cost: estimator failed: {e}", file=sys.stderr)
+            print(f"zeo --repo-cost: estimator failed: {e}", file=sys.stderr)
             return 2
         report = repo_token_report(root, estimate=estimate, model=rates["model"])
         report["tokenizer"] = tok_label
@@ -1396,7 +1396,7 @@ def main(argv: list[str] | None = None) -> int:
                     clog = str(default_log)
             if tpath is None and clog is None:
                 print(
-                    "sow-lint --session-cost: pass --transcript PATH or --cost-log PATH "
+                    "zeo --session-cost: pass --transcript PATH or --cost-log PATH "
                     "(or run inside a corpus with tools/stream-instruments/session-costs.jsonl)",
                     file=sys.stderr,
                 )
@@ -1406,16 +1406,16 @@ def main(argv: list[str] | None = None) -> int:
                 get_model_rates(model_tag)  # fail closed early
             report = session_cost_report(transcript=tpath, cost_log=clog, model=model_tag)
         except UnknownModelError as e:
-            print(f"sow-lint --session-cost: {e}", file=sys.stderr)
+            print(f"zeo --session-cost: {e}", file=sys.stderr)
             return 2
         except Exception as e:
-            print(f"sow-lint --session-cost: {e}", file=sys.stderr)
+            print(f"zeo --session-cost: {e}", file=sys.stderr)
             return 2
         if append_cost_log_path:
             try:
                 append_session_cost_log(append_cost_log_path, report)
             except Exception as e:
-                print(f"sow-lint --session-cost: append-cost-log failed: {e}", file=sys.stderr)
+                print(f"zeo --session-cost: append-cost-log failed: {e}", file=sys.stderr)
                 return 2
         if want_json:
             import json as _json
@@ -1486,7 +1486,7 @@ def main(argv: list[str] | None = None) -> int:
     if want_progress is not None:
         r = _discover_root(positional[0] if positional else None)
         if r is None:
-            print("sow-lint --progress: run from inside the corpus", file=sys.stderr)
+            print("zeo --progress: run from inside the corpus", file=sys.stderr)
             return 2
         rows = stream_progress(r, want_progress or None)
         rows.sort(key=lambda x: (x["resting"], -x["idle"]))
@@ -1519,7 +1519,7 @@ def main(argv: list[str] | None = None) -> int:
         r = _discover_root(positional[0] if positional else None)
         if r is None:
             print(
-                "sow-lint --locate: run from inside the corpus, or pass its path",
+                "zeo --locate: run from inside the corpus, or pass its path",
                 file=sys.stderr,
             )
             return 2
@@ -1641,7 +1641,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             results = resync_apply(tgt, resync_apply_upstream)
         except Exception as e:
-            print(f"sow-lint --resync-apply: {e}", file=sys.stderr)
+            print(f"zeo --resync-apply: {e}", file=sys.stderr)
             return 2
         written = [r for r in results if r["action"] == "WRITTEN"]
         skipped = [r for r in results if r["action"] == "SKIP"]
@@ -1689,7 +1689,7 @@ def main(argv: list[str] | None = None) -> int:
     if promote_dir:
         root = _discover_root(positional[0] if positional else promote_dir)
         if root is None:
-            print("sow-lint --promote: couldn't find the repo root", file=sys.stderr)
+            print("zeo --promote: couldn't find the repo root", file=sys.stderr)
             return 2
         root = corpus_root(promote_dir) or root
         plan = promote_plan(root, promote_dir)
@@ -1792,7 +1792,7 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         target = pathlib.Path(positional[0])
         if not target.exists():
-            print(f"sow-lint: path does not exist: {target}", file=sys.stderr)
+            print(f"zeo: path does not exist: {target}", file=sys.stderr)
             return 2
         # THE BUG (diag/346): a single-FILE target set root=the file, so
         # project_of(path, root) returned None and every project_of-gated ERROR
@@ -1826,7 +1826,7 @@ def main(argv: list[str] | None = None) -> int:
         current_rev = parse_current_rev(read_doctrine(canon))
 
     rev_note = f"canonical Rev {current_rev}" if current_rev is not None else "canonical Rev UNKNOWN"
-    print(f"=== sow-lint {_version()} · {rev_note} ===")
+    print(f"=== zeo {_version()} · {rev_note} ===")
 
     # Fold 1: governance-docs-first — grade the currency-enforcer (the skill) BEFORE the corpus.
     gov_errs = 0
@@ -1880,7 +1880,7 @@ def main(argv: list[str] | None = None) -> int:
     # NEVER CALLED from anywhere in this file - not from --commit-check (expected, a
     # per-file target's files_fm has one entry and a collision needs two), but not from
     # an ordinary FULL CORPUS run either. MEASURED before this line existed: a synthetic
-    # two-file same-NNN fixture linted with the plain `sow-lint <dir>` (no --commit-check)
+    # two-file same-NNN fixture linted with the plain `zeo <dir>` (no --commit-check)
     # reported "2 passed - 0 failed", the collision completely invisible, which is a
     # stronger defect than doctrine's own diagnosis named (it attributed the miss only
     # to the per-file commit gate). Wiring it in here fixes reachability for any run that

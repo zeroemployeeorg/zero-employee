@@ -250,7 +250,7 @@ def test_cli_inbox_declares_invisible_coverage(tmp_path, capsys, monkeypatch):
 
 def test_lint_file_fails_bad_status_enum(tmp_path):
     # THE HOLE (DS5-DIAG-333→350): lint_file never checked status-in-enum — only migrate_check
-    # did — so `sow-lint <file>` graded status:NONSENSE as "passed". check_status closes it,
+    # did — so `zeo <file>` graded status:NONSENSE as "passed". check_status closes it,
     # gated on canonical shape (project_of) so pre-schema files aren't newly-failed.
     import zero_employee.core as core
 

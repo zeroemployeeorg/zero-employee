@@ -1,5 +1,5 @@
 # ============================================================
-# sovereignagents — sow-lint Makefile
+# sovereignagents — zeo Makefile
 # ============================================================
 
 GREEN  := $(shell tput -Txterm setaf 2 2>/dev/null || echo "")
@@ -39,10 +39,10 @@ help: ## Show this help menu
 	@echo "  ${GREEN}make lint${RESET}              - Run ruff linting checks"
 	@echo "  ${GREEN}make typecheck${RESET}         - Run mypy type checking"
 	@echo "  ${GREEN}make test${RESET}              - Run pytest suite via uv"
-	@echo "  ${GREEN}make dogfood${RESET}           - Run sow-lint on sovereignagents corpus"
+	@echo "  ${GREEN}make dogfood${RESET}           - Run zeo on sovereignagents corpus"
 	@echo ""
 	@echo "${YELLOW}Tool Installation:${RESET}"
-	@echo "  ${GREEN}make install-tool${RESET}      - Install sow-lint globally via uv tool"
+	@echo "  ${GREEN}make install-tool${RESET}      - Install zeo globally via uv tool"
 	@echo ""
 	@echo "${YELLOW}Clean:${RESET}"
 	@echo "  ${GREEN}make clean-caches${RESET}      - Remove test/lint caches and pyc files"
@@ -62,15 +62,15 @@ env: ## Create virtual environment using uv
 	@echo "${GREEN}✓ Virtual environment created in $(VENV_NAME)${RESET}"
 
 .PHONY: install
-install: ## Install sow-lint in editable mode
+install: ## Install zeo in editable mode
 	@echo "${BLUE}Installing zero-employee in editable mode...${RESET}"
 	@if [ ! -d "$(VENV_NAME)" ]; then $(MAKE) --no-print-directory env; fi
 	@$(UV) pip install -e ".[dev]" --python $(PYTHON) 2>/dev/null || $(UV) pip install -e . --python $(PYTHON)
-	@echo "${GREEN}✓ sow-lint installed${RESET}"
+	@echo "${GREEN}✓ zeo installed${RESET}"
 
 .PHONY: setup
 setup: ## Create environment and install all dependencies
-	@echo "${BLUE}Setting up sow-lint development environment...${RESET}"
+	@echo "${BLUE}Setting up zeo development environment...${RESET}"
 	@$(MAKE) --no-print-directory env
 	@$(MAKE) --no-print-directory install
 	@$(MAKE) --no-print-directory check-env
@@ -85,7 +85,7 @@ check-env: ## Verify virtual environment is active and zero_employee is importab
 
 .PHONY: verify
 verify: ## The doctrine gate: format-check + lint + tests
-	@echo "${BLUE}Running sow-lint doctrine gate...${RESET}"
+	@echo "${BLUE}Running zeo doctrine gate...${RESET}"
 	@echo ""
 	@echo "${BLUE}[1/3] format-check${RESET}"
 	@$(MAKE) --no-print-directory format-check
@@ -133,15 +133,15 @@ test: ## Run test suite via uv pytest
 	@$(UV) run pytest -q
 
 .PHONY: dogfood
-dogfood: ## Run sow-lint against sovereignagents sows repo
-	@echo "${BLUE}Dogfooding sow-lint...${RESET}"
-	@if [ -d "../sovereignagents-sows" ]; then $(UV) run sow-lint ../sovereignagents-sows; elif [ -d "../org" ]; then $(UV) run sow-lint ../org; else echo "${YELLOW}No target corpus found at ../sovereignagents-sows or ../org${RESET}"; fi
+dogfood: ## Run zeo against sovereignagents sows repo
+	@echo "${BLUE}Dogfooding zeo...${RESET}"
+	@if [ -d "../sovereignagents-sows" ]; then $(UV) run zeo ../sovereignagents-sows; elif [ -d "../org" ]; then $(UV) run zeo ../org; else echo "${YELLOW}No target corpus found at ../sovereignagents-sows or ../org${RESET}"; fi
 
 .PHONY: install-tool
-install-tool: ## Install sow-lint CLI globally via uv tool
+install-tool: ## Install zeo CLI globally via uv tool
 	@echo "${BLUE}Installing zero-employee as global uv tool...${RESET}"
 	@$(UV) tool install --force .
-	@echo "${GREEN}✓ sow-lint installed as global uv tool${RESET}"
+	@echo "${GREEN}✓ zeo installed as global uv tool${RESET}"
 
 .PHONY: clean-caches
 clean-caches: ## Clear test, lint, and Python bytecode caches

@@ -1,4 +1,4 @@
-"""sow-lint hooks install — templates into tools/hooks + git pre-commit."""
+"""zeo hooks install — templates into tools/hooks + git pre-commit."""
 
 from __future__ import annotations
 

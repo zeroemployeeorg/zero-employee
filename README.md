@@ -1,6 +1,6 @@
 <div align="center">
 
-# Zero Employee Organizations (`zero-employee`)
+Portable governance tooling for Statement-of-Work (SOW) corpora. Install the package, point it at a corpus, and use the `zeo` CLI (the `zeo` command is retained as a permanent alias).
 
 **Portable, deterministic governance tooling and AI agent orchestration for Statement-of-Work (SOW) corpora.**
 
@@ -93,7 +93,7 @@ ZEO_SOWS_ROOT=/path/to/corpus zeo --triage
 | `zeo hooks install` | Install automated git pre-commit and session hook templates. |
 | `zeo <path>` | Lint a single SOW, ruling, or skill file against strict schema rules. |
 
-> **Note on Aliases:** `sow-lint` is a permanent, retained binary alias for `zeo`. All arguments and flags are identical.
+`zeo` accepts the same arguments as `zeo`.
 
 ---
 

@@ -1,4 +1,4 @@
-"""Install corpus hook templates that call sow-lint (no duplicated rate tables)."""
+"""Install corpus hook templates that call zeo (no duplicated rate tables)."""
 
 from __future__ import annotations
 

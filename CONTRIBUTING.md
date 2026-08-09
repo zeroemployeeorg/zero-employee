@@ -13,7 +13,7 @@ uv run python -m pytest
 ## Layout
 
 - Package import: `zero_employee` under `src/zero_employee/`
-- CLIs: `zeo` and `sow-lint` (both entry points retained)
+- CLIs: `zeo` and `zeo` (both entry points retained)
 - Tests: `tests/`
 
 ## Rules of thumb

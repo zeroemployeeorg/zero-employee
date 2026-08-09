@@ -46,7 +46,7 @@ def _ruling(d, num, letter, scope="org"):
 
 
 def test_near_miss_explicit_root_self_heals_via_walkup(tmp_path):
-    """THE LITERAL example-org repro shape: `sow-lint --mint ruling org-master`, run FROM
+    """THE LITERAL example-org repro shape: `zeo --mint ruling org-master`, run FROM
     INSIDE org-master, builds the nonexistent path `org-master/org-master`. The OLD
     `_discover_root` returned that bogus Path verbatim and every downstream glob against
     it silently came back empty. The fix walks up from the (possibly nonexistent) explicit

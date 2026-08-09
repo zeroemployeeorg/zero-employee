@@ -1,6 +1,6 @@
 """Relative invocation - the normal way an operator runs it - must work.
 
-PAID (GM-DS6-166): `sow-lint --promote quackverse/sow/repo-hygiene` raised
+PAID (GM-DS6-166): `zeo --promote quackverse/sow/repo-hygiene` raised
 ValueError: not in the subpath. Every fixture uses tmp_path, which is ALWAYS absolute, so
 229 tests were green against a CLI that crashed on its first real relative invocation.
 """

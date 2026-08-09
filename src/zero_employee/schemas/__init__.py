@@ -1,4 +1,4 @@
-"""Pydantic genre schemas for sow-lint.
+"""Pydantic genre schemas for zeo.
 
 Field validation lives here so migrate write-side models and lint graders share
 one enum source. Path/corpus checks stay in core.py (they need disk context).
