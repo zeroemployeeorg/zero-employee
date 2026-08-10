@@ -5,4 +5,5 @@
 ## Local Overrides & Context
 
 - **Primary Workstreams:** `projects/*/sow/` or `sow/`
-- **Build/Test Gate:** `make verify` or `zeo`
+- **Build/Test Gate:** `make verify` or `zeo <path>`
+- **Agent first command:** `zeo orient --json`

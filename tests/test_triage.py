@@ -119,9 +119,13 @@ def test_the_banner_states_the_REAL_version_not_a_hardcoded_string(tmp_path, cap
 
 
 def test_help_documents_triage(capsys):
-    cli.main(["--help"])
+    cli.main(["help", "--all"])
     out = capsys.readouterr().out
     assert "--triage" in out
+    # Progressive help also mentions triage
+    cli.main(["--help"])
+    out2 = capsys.readouterr().out
+    assert "triage" in out2.lower()
 
 
 # ── the NEEDS-SUCCESSOR filter (RULING-060 s2.1, MANDATED) ────────────

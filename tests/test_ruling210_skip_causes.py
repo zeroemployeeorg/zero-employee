@@ -164,11 +164,11 @@ def test_quiet_suppresses_the_per_file_block_but_keeps_the_named_count(tmp_path,
 
 
 def test_help_documents_quiet():
-    rc = cli.main(["--help"])
+    rc = cli.main(["help", "--all"])
     assert rc == 0
 
 
 def test_help_text_mentions_quiet(capsys):
-    cli.main(["--help"])
+    cli.main(["help", "--all"])
     out = capsys.readouterr().out
     assert "--quiet" in out

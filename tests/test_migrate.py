@@ -605,7 +605,7 @@ def test_concurrent_change_during_write_escalates(tmp_path, monkeypatch):
 def test_cli_help_documents_the_migrate_flags(capsys):
     from zero_employee import cli
 
-    cli.main(["--help"])
+    cli.main(["help", "--all"])
     out = capsys.readouterr().out
     assert "--migrate <file>" in out and "--model <tag>" in out
     assert "--migrate-check <file>" in out
