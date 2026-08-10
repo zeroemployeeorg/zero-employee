@@ -228,6 +228,7 @@ def run_pre_commit(corpus_root: pathlib.Path | str | None = None) -> int:
 def run_session_start(corpus_root: pathlib.Path | str | None = None) -> int:
     """Fail-open SessionStart orientation; refresh local boards."""
     from . import cli
+    from .orient import build_orientation, render_orientation_human
 
     root = pathlib.Path(corpus_root).resolve() if corpus_root else cli._discover_root(None)
     if root is None:
@@ -236,9 +237,13 @@ def run_session_start(corpus_root: pathlib.Path | str | None = None) -> int:
     root = pathlib.Path(root).resolve()
     print("=== ZEO SESSION START ===")
     try:
-        cli.main(["--triage", str(root)])
+        o = build_orientation(root=root)
+        print(render_orientation_human(o), end="")
     except Exception:
-        pass
+        try:
+            cli.main(["--triage", str(root)])
+        except Exception:
+            pass
     print("--- streams not at rest, oldest idle first ---")
     try:
         cli.main(["--progress", str(root)])
@@ -251,7 +256,8 @@ def run_session_start(corpus_root: pathlib.Path | str | None = None) -> int:
         pass
     print("--> Refreshing local fleet board...")
     _regen_local_boards(root)
-    print("If you are a STREAM: run 'zeo --locate <your-stream>' and 'zeo --inbox <your-stream>'.")
+    print("If you are a STREAM: run 'zeo work <your-stream>' and 'zeo --inbox <your-stream>'.")
+    print("Agent first command: zeo orient --json")
     print("The tool reads DISK. A spawn message that disagrees with it is WRONG.")
     return 0
 

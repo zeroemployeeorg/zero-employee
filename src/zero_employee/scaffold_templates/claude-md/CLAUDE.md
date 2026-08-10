@@ -2,6 +2,25 @@
 
 DOC-DATE: (Rev 17, scaffold)
 
+## ZEO
+
+This repository uses ZEO for governed agent work.
+
+At session start, run:
+
+```bash
+zeo orient --json
+```
+
+Follow the returned protocol.
+
+Important:
+
+- Inspect repository bytes before making implementation claims.
+- Never hand-author SOW/intake YAML.
+- Use `zeo intake promote` for grounded intake-to-SOW conversion.
+- Use `zeo doctor` before declaring governed work ready.
+
 ## 1. Operating Rules & Doctrine
 
 - Single Source of Truth: doctrine under `claude-md/CLAUDE.md` (IDE entrypoints import this file).
@@ -10,11 +29,11 @@ DOC-DATE: (Rev 17, scaffold)
 - Intake captures intent before identity is known; SOW governs work after identity is known.
 - An implementation SOW promoted from intake must be grounded in current repository bytes, not inferred from intake prose alone.
 - The coding agent owns investigation and engineering judgment; ZEO owns evidence validation, identity, governance syntax, and the write gate.
-- Primary gate: `make verify` or `zeo` / `zeo` must pass before every commit.
+- Primary gate: `make verify` or `zeo <path>` must pass before every commit.
 
 ## 2. Gate Contract
 
-Run `make verify` (or `zeo <path>` / `zeo <path>`) to execute format-checks, linting, and tests.
+Run `make verify` (or `zeo <path>`) to execute format-checks, linting, and tests.
 
 ## 3. SOW Frontmatter (Rev 17)
 
@@ -30,8 +49,6 @@ Capture intent without YAML:
 
 ```bash
 zeo intake "idea title"
-# or
-zeo intake new --spec -
 ```
 
 When promoting an intake into an implementation SOW:

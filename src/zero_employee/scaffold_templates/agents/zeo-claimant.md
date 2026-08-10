@@ -7,10 +7,13 @@ description: Draft SOWs, legacy reconstruction, and candidate frontmatter. Does 
 
 You propose draft SOWs, reconstruct legacy files, and compute initial frontmatter claims.
 
+At session start: `zeo orient --json` — follow the returned protocol.
+
 ## Posture
 
 - File under `projects/<project>/sow/<stream>/` with Rev-17 frontmatter.
 - Carry runnable `done_when:` and honest `restaufwand:` on working statuses.
+- Prefer `zeo new` / `zeo sow new` — never hand-author YAML.
 - Map to doctrine hierarchy: claimant drafting ↔ stream execution drafting
   (product seats `zeo-stream` remain unchanged).
 

@@ -4,8 +4,9 @@
 
 ```bash
 uv tool install zero-employee
-zeo --help
-sow-lint --help   # permanent alias
+zeo                  # orientation dashboard
+zeo help             # progressive help
+zeo help --all       # full command reference
 ```
 
 ## 2. Obtain a corpus
@@ -20,11 +21,10 @@ mkdir my-org && cd my-org
 zeo init
 # optional IDE/agent bridges (opt-in; default is clean):
 zeo init --cursor --gemini          # or: zeo bridges --all
-# capture intent without YAML, then promote via coding-agent protocol:
-zeo intake "UI framework refresh idea"
-zeo sow new ducktyper ui-refresh --title "UI Framework Refresh"
-# or greenfield wrapper (also writes project CLAUDE.md):
-zeo scaffold ducktyper ui-refresh 1 "UI Framework Refresh"
+
+# Then:
+zeo                 # where am I / what next?
+zeo new             # start intake, SOW, or project
 ```
 
 `zeo init` creates:
@@ -55,22 +55,25 @@ Any one of:
 
 ```bash
 cd /path/to/corpus
-zeo --board
+zeo
 
 # or
-ZEO_SOWS_ROOT=/path/to/corpus zeo --board
+ZEO_SOWS_ROOT=/path/to/corpus zeo
 
 # or
-zeo --board /path/to/corpus
+zeo board /path/to/corpus
 ```
 
 ## 4. First useful commands
 
 ```bash
-zeo --triage          # what needs attention
-zeo --progress        # streams not at rest
-zeo --restaufwand     # distance to done
-zeo path/to/a-SOW.md  # lint one file
+zeo                     # orientation: where am I, what next?
+zeo orient --json       # same briefing for agents (canonical first command)
+zeo new                 # start intake / SOW / project
+zeo work                # what can I pick up?
+zeo next                # single highest-priority action
+zeo triage              # operator worklist (also: zeo --triage)
+zeo path/to/a-SOW.md    # lint one file
 ```
 
 ## 5. Install hooks (recommended)
@@ -80,28 +83,4 @@ cd /path/to/corpus
 zeo hooks install
 ```
 
-This:
-
-- Writes **thin** stubs under `tools/hooks/` (and `.git/hooks/pre-commit`) that call
-  `zeo hooks <subcommand>` — gate logic lives in the package, so upgrading
-  `zero-employee` updates hook behavior without re-copying scripts
-- Ensures `.gitignore` ignores `STATE.md` and `stream-index.md`
-
-Generated boards are **local views**. Run `zeo --board` / `zeo --stream-index` (or let
-SessionStart / pre-commit refresh them). Do not commit them — that is what used to cause
-merge conflicts for beginners.
-
-If an older corpus still tracks those files:
-
-```bash
-git rm --cached STATE.md stream-index.md
-```
-
-## Troubleshooting
-
-| Symptom | Likely cause |
-| --- | --- |
-| `couldn't find a corpus` | No `claude-md/CLAUDE.md` above cwd; set `ZEO_SOWS_ROOT` or pass a path |
-| `sow-lint` not found after install | Ensure `~/.local/bin` (or uv tool bin) is on `PATH` |
-| B2 / grandfather findings missing | Packaged manifest is empty; add corpus-local `tools/doctrine/grandfather_manifest.toml` |
-| `scaffold: corpus marker missing` | Run `zeo init` first (needs `claude-md/CLAUDE.md`) |
+SessionStart runs the shared orientation model (same truth as `zeo` / `zeo orient`).

@@ -746,7 +746,15 @@ def _digest(root, since) -> int:
 
 
 _USAGE = """zeo (zero-employee) - portable SOW governance tooling
-  Alias: zeo (retained forever for corpus check: fields).
+
+Orientation (preferred entry points)
+  zeo                        Human orientation dashboard
+  zeo orient [--json]        Same briefing; --json for agents
+  zeo new                    Start intake / SOW / project
+  zeo work [stream]          Continue governed work
+  zeo next [--json]          Highest-priority next action
+  zeo help                   Progressive help (this file: zeo help --all)
+  zeo triage | zeo board     Operator views (legacy: --triage / --board)
 
 USAGE
   zeo <file-or-dir>          Lint a SOW / ruling / boot doc (grades it against canonical).
@@ -807,6 +815,8 @@ USAGE
   zeo --mint sow <stream> [path]
                                   The next SOW n: for one stream (same read locate_stream
                                   already does). Same race limitation, printed every call.
+  zeo mint ruling|sow …      Canonical subcommand form of --mint (legacy flags kept).
+  zeo index streams|rulings  Canonical form of --stream-index / --ruling-index.
   zeo --stream-index [path]  Write local stream-index.md (gitignored) - stream id → path
                                   (doctrine). Regenerated WHOLE on every run.
   zeo --digest [since] [path]
@@ -884,7 +894,9 @@ OPTIONS
   --skill <p>        Grade a specific skill/boot doc for currency.
 
 The sows repo is auto-discovered by walking up to a claude-md/CLAUDE.md marker,
-so --board and --inbox need NO path when you're in or near the repo."""
+so --board and --inbox need NO path when you're in or near the repo.
+
+Legacy aliases remain supported (--board, --triage, --stream-index, --ruling-index, --digest, --mint)."""
 
 
 def _cmd_init(argv: list[str]) -> int:
@@ -904,7 +916,307 @@ def _cmd_init(argv: list[str]) -> int:
             print(f"    {act['action']}: {act['path']}")
     else:
         print("  bridges: (none — pass --cursor/--gemini/--claude/--agents/--all)")
+    print("")
+    print("Next:")
+    print("")
+    print("  Human:")
+    print("    zeo")
+    print("")
+    print("  Claude Code / Codex:")
+    print("    zeo orient --json")
+    print("")
+    print("Try it now:")
+    print("    zeo new")
     return 0
+
+
+def _cmd_help(argv: list[str]) -> int:
+    from .orient import HELP_TOPICS, render_help_root
+
+    if any(a in ("--all", "-a") for a in argv):
+        print(_USAGE)
+        return 0
+    topic = next((a for a in argv if not str(a).startswith("-")), None)
+    if topic:
+        body = HELP_TOPICS.get(topic.lower())
+        if body is None:
+            print(f"zeo help: unknown topic {topic!r}", file=sys.stderr)
+            print("Topics: " + ", ".join(sorted(HELP_TOPICS)), file=sys.stderr)
+            print("Or: zeo help --all", file=sys.stderr)
+            return 2
+        print(body, end="" if body.endswith("\n") else "\n")
+        return 0
+    print(render_help_root(), end="")
+    return 0
+
+
+def _cmd_orient(argv: list[str]) -> int:
+    from .orient import (
+        build_orientation,
+        dumps_json,
+        orientation_to_dict,
+        render_orientation_human,
+    )
+
+    want_json = "--json" in argv
+    stream = None
+    i = 0
+    while i < len(argv):
+        if argv[i] == "--stream" and i + 1 < len(argv):
+            stream = argv[i + 1]
+            i += 2
+        elif argv[i] == "--json":
+            i += 1
+        elif argv[i] in ("--help", "-h"):
+            print("Usage: zeo orient [--stream NAME] [--json]")
+            return 0
+        elif not str(argv[i]).startswith("-"):
+            # optional path
+            i += 1
+        else:
+            i += 1
+    path_args = [a for a in argv if not str(a).startswith("-") and a != stream]
+    explicit = path_args[0] if path_args else None
+    root = _discover_root(explicit)
+    o = build_orientation(root=root, stream=stream)
+    if want_json:
+        print(dumps_json(orientation_to_dict(o)), end="")
+        return 0
+    print(render_orientation_human(o), end="")
+    return 0
+
+
+def _cmd_new(argv: list[str]) -> int:
+    from .orient import NEW_CHOICES, dumps_json, new_choices_to_dict, render_new_menu_human
+
+    want_json = "--json" in argv
+    if want_json:
+        print(dumps_json(new_choices_to_dict()), end="")
+        return 0
+
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        print(render_new_menu_human(), end="")
+        return 0
+
+    print(render_new_menu_human(), end="")
+    try:
+        choice = input("Choice [1-3]: ").strip()
+    except EOFError:
+        return 0
+    if not choice:
+        return 0
+    try:
+        n = int(choice)
+    except ValueError:
+        print(f"zeo new: invalid choice {choice!r}", file=sys.stderr)
+        return 2
+    selected = next((c for c in NEW_CHOICES if c["id"] == n), None)
+    if selected is None:
+        print("zeo new: choose 1, 2, or 3", file=sys.stderr)
+        return 2
+
+    if selected["key"] == "intake":
+        title = input("Intake title: ").strip()
+        if not title:
+            print("zeo new: title required", file=sys.stderr)
+            return 2
+        return _cmd_intake(["new", "--title", title])
+    if selected["key"] == "sow":
+        project = input("Project: ").strip()
+        stream = input("Stream: ").strip()
+        title = input("Title: ").strip()
+        if not project or not stream or not title:
+            print("zeo new: project, stream, and title are required", file=sys.stderr)
+            return 2
+        return _cmd_sow(["new", project, stream, "--title", title])
+    if selected["key"] == "project":
+        project = input("Project: ").strip()
+        stream = input("Stream: ").strip()
+        title = input("Title [Initial Workstream SOW]: ").strip() or "Initial Workstream SOW"
+        if not project or not stream:
+            print("zeo new: project and stream are required", file=sys.stderr)
+            return 2
+        return _cmd_scaffold([project, stream, "1", title])
+    return 2
+
+
+def _cmd_work(argv: list[str]) -> int:
+    from .orient import (
+        build_stream_detail,
+        build_work_listing,
+        dumps_json,
+        render_stream_detail_human,
+        render_work_listing_human,
+    )
+
+    want_json = "--json" in argv
+    args = [a for a in argv if a != "--json" and a not in ("--help", "-h")]
+    if any(a in ("--help", "-h") for a in argv):
+        print("Usage: zeo work [stream|.] [--json]")
+        return 0
+
+    root = _discover_root(None)
+    if root is None:
+        print(
+            "zeo work: couldn't find a corpus. Run from inside one or set ZEO_SOWS_ROOT.",
+            file=sys.stderr,
+        )
+        return 2
+
+    target = args[0] if args else None
+    if target in (None,):
+        listing = build_work_listing(root)
+        if want_json:
+            from dataclasses import asdict
+
+            print(
+                dumps_json(
+                    {
+                        "protocol_version": 1,
+                        "active": [asdict(x) for x in listing.active],
+                        "waiting_on_you": [asdict(x) for x in listing.waiting_on_you],
+                        "recently_touched": [asdict(x) for x in listing.recently_touched],
+                        "open_intakes": listing.open_intakes,
+                    }
+                ),
+                end="",
+            )
+            return 0
+        print(render_work_listing_human(listing), end="")
+        return 0
+
+    stream = target
+    if target == ".":
+        from .orient import build_orientation
+
+        o = build_orientation(root=root)
+        ctx = o.active_context
+        if not ctx or ctx.kind != "stream" or not ctx.stream:
+            print("zeo work .: not inside a stream directory", file=sys.stderr)
+            return 2
+        stream = ctx.stream
+
+    detail = build_stream_detail(root, stream)
+    if want_json:
+        print(dumps_json(detail), end="")
+        return 0 if detail.get("found") else 2
+    print(render_stream_detail_human(detail), end="")
+    return 0 if detail.get("found") else 2
+
+
+def _cmd_next(argv: list[str]) -> int:
+    from .orient import build_next_action, dumps_json, next_action_to_dict, render_next_action_human
+
+    want_json = "--json" in argv
+    stream = None
+    i = 0
+    while i < len(argv):
+        if argv[i] == "--stream" and i + 1 < len(argv):
+            stream = argv[i + 1]
+            i += 2
+        else:
+            i += 1
+    root = _discover_root(None)
+    n = build_next_action(root=root, stream=stream)
+    if want_json:
+        print(dumps_json(next_action_to_dict(n)), end="")
+        return 0
+    print(render_next_action_human(n), end="")
+    return 0
+
+
+def _cmd_board_alias(argv: list[str]) -> int:
+    path = next((a for a in argv if not str(a).startswith("-")), None)
+    root = _discover_root(path)
+    if root is None:
+        print("zeo board: couldn't find a corpus.", file=sys.stderr)
+        return 2
+    return _board(root)
+
+
+def _cmd_triage_alias(argv: list[str]) -> int:
+    path = next((a for a in argv if not str(a).startswith("-")), None)
+    root = _discover_root(path)
+    if root is None:
+        print("zeo triage: couldn't find a corpus.", file=sys.stderr)
+        return 2
+    return _triage(root)
+
+
+def _cmd_digest_alias(argv: list[str]) -> int:
+    # Optional since duration, optional path — mirror --digest parsing
+    since = None
+    path = None
+    positionals = [a for a in argv if not str(a).startswith("-")]
+    if positionals:
+        first = positionals[0]
+        if not pathlib.Path(first).exists() and not first.startswith("/") and len(first) < 8:
+            # treat as duration like 4h/1d when it doesn't look like a path
+            since = first
+            path = positionals[1] if len(positionals) > 1 else None
+        else:
+            path = first
+    root = _discover_root(path)
+    if root is None:
+        print("zeo digest: couldn't find a corpus.", file=sys.stderr)
+        return 2
+    return _digest(root, since)
+
+
+def _cmd_index(argv: list[str]) -> int:
+    if not argv or argv[0] in ("--help", "-h"):
+        print("Usage: zeo index streams|rulings [path]", file=sys.stderr)
+        return 2
+    kind = argv[0]
+    path = next((a for a in argv[1:] if not str(a).startswith("-")), None)
+    root = _discover_root(path)
+    if root is None:
+        print("zeo index: couldn't find a corpus.", file=sys.stderr)
+        return 2
+    if kind in ("streams", "stream"):
+        return _stream_index_cmd(root)
+    if kind in ("rulings", "ruling"):
+        return _ruling_index(root)
+    print(f"zeo index: unknown kind {kind!r} (streams|rulings)", file=sys.stderr)
+    return 2
+
+
+def _cmd_mint_alias(argv: list[str]) -> int:
+    if not argv or argv[0] in ("--help", "-h"):
+        print("Usage: zeo mint ruling|sow [stream] [--words '...'] [path]", file=sys.stderr)
+        return 2
+    kind = argv[0]
+    rest = argv[1:]
+    words = None
+    stream = None
+    path = None
+    i = 0
+    positionals: list[str] = []
+    while i < len(rest):
+        if rest[i] == "--words" and i + 1 < len(rest):
+            words = rest[i + 1]
+            i += 2
+        elif not str(rest[i]).startswith("-"):
+            positionals.append(rest[i])
+            i += 1
+        else:
+            i += 1
+    if kind == "sow":
+        if not positionals:
+            print("Usage: zeo mint sow <stream> [path]", file=sys.stderr)
+            return 2
+        stream = positionals[0]
+        path = positionals[1] if len(positionals) > 1 else None
+    else:
+        path = positionals[0] if positionals else None
+    if kind not in ("ruling", "sow"):
+        print(f"zeo mint: unknown kind {kind!r}", file=sys.stderr)
+        return 2
+    root = _discover_root(path)
+    if root is None:
+        print("zeo mint: couldn't find a corpus.", file=sys.stderr)
+        return 2
+    return _mint(root, kind, stream, words=words)
 
 
 def _cmd_scaffold(argv: list[str]) -> int:
@@ -1858,6 +2170,31 @@ def main(argv: list[str] | None = None) -> int:
     # 'args = argv[1:]' stripped BOTH, so main(['--help']) became [] -> usage-error 2
     # (diag). This is the arg-convention bug the new CLI tests exposed.
     args = sys.argv[1:] if argv is None else argv
+
+    # Orientation OS front door: bare `zeo` is the human dashboard, not help.
+    if not args:
+        return _cmd_orient([])
+
+    if args and args[0] == "help":
+        return _cmd_help(args[1:])
+    if args and args[0] == "orient":
+        return _cmd_orient(args[1:])
+    if args and args[0] == "new":
+        return _cmd_new(args[1:])
+    if args and args[0] == "work":
+        return _cmd_work(args[1:])
+    if args and args[0] == "next":
+        return _cmd_next(args[1:])
+    if args and args[0] == "board":
+        return _cmd_board_alias(args[1:])
+    if args and args[0] == "triage":
+        return _cmd_triage_alias(args[1:])
+    if args and args[0] == "digest":
+        return _cmd_digest_alias(args[1:])
+    if args and args[0] == "index":
+        return _cmd_index(args[1:])
+    if args and args[0] == "mint":
+        return _cmd_mint_alias(args[1:])
     if args and args[0] == "hooks":
         return _cmd_hooks(args[1:])
     if args and args[0] == "init":
@@ -1895,8 +2232,7 @@ def main(argv: list[str] | None = None) -> int:
     resync_apply_upstream = None
     promote_dir = None
     if any(a in ("--help", "-h") for a in args):
-        print(_USAGE)
-        return 0
+        return _cmd_help([])
     claude_md_override = None
     skill_path = None
     board = False
@@ -2692,7 +3028,10 @@ def main(argv: list[str] | None = None) -> int:
     else:
         # lint mode still needs an explicit target (a file or dir to lint)
         if len(positional) != 1:
-            print(_USAGE, file=sys.stderr)
+            print(
+                "zeo: pass a file/dir to lint, or run `zeo` for orientation / `zeo help` for commands.",
+                file=sys.stderr,
+            )
             return 2
         target = pathlib.Path(positional[0])
         if not target.exists():

@@ -65,16 +65,20 @@ pip install zero-employee
 
 ```bash
 # From inside a corpus (or with ZEO_SOWS_ROOT set):
-zeo --board
-zeo --triage
-zeo --help
+zeo                     # human orientation dashboard
+zeo orient --json       # agent briefing (canonical first command)
+zeo new                 # start intake / SOW / project
+zeo work                # continue governed work
+zeo triage              # what needs attention
+zeo help                # progressive help
+zeo help --all          # full command reference
 
 # Target a specific corpus path from anywhere:
-zeo --board /path/to/corpus
-ZEO_SOWS_ROOT=/path/to/corpus zeo --triage
+zeo board /path/to/corpus
+ZEO_SOWS_ROOT=/path/to/corpus zeo triage
 ```
 
-*If no corpus is found, `zeo` exits non-zero with a clear error message—it never hallucinates or invents a board.*
+*If no corpus is found, `zeo` still orients you (suggests `zeo init`) and exits zero—it never hallucinates a board.*
 
 ---
 

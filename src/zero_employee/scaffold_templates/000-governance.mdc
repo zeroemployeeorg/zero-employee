@@ -10,8 +10,10 @@ Strictly follow all rules and procedures defined in `@CLAUDE.md`.
 
 ## Execution Rules
 
-1. Before declaring any code/SOW task finished or submitting a commit, run:
-   `make verify` (or `zeo` / `zeo` on the changed paths).
-2. Never bypass a failing gate or ignore `zeo` / `zeo` warnings/errors.
-3. Obey SOW frontmatter rules (`schema_rev: 17`, `status:`, `restaufwand:`, `done_when:`).
-4. Do not mutate historical SOW bodies or closed rulings.
+1. At session start, run `zeo orient --json` and follow the returned protocol.
+2. Before declaring any code/SOW task finished or submitting a commit, run:
+   `make verify` (or `zeo <path>` on the changed paths).
+3. Never bypass a failing gate or ignore `zeo` warnings/errors.
+4. Obey SOW frontmatter rules (`schema_rev: 17`, `status:`, `restaufwand:`, `done_when:`).
+5. Do not mutate historical SOW bodies or closed rulings.
+6. Never hand-author SOW/intake YAML; use `zeo intake promote` for grounded promotion.
