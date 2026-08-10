@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.1.6] - 2026-08-10
+
+### Added
+- **Intake Capture (`zeo intake new` / `open` / `edit`):** Frictionless capture of intent before identity is known. Supports positional titles, CLI flags, `$EDITOR` templates, raw stdin, and JSON specs.
+- **Grounded Promote (`zeo intake promote`):** High-assurance promotion of intake items into governed SOWs, grounded in validated repository evidence and proposals stored under `.zeo/intake-proposals/`.
+- **Mission & Context Protocol (`zeo intake mission` / `context`):** Structured JSON retrieval protocol for coding agents to investigate codebase context before submitting grounded proposals.
+- **Intake Schema & Status Normalization:** Lightweight intake grader with canonical write status enum (`OPEN`, `PROMOTED`, `DUPLICATE`, `REJECTED`, `PARKED`) and read normalization for legacy statuses (`CHARTERED`, `DECLINED`, `SUPERSEDED`).
+- **Scaffold Doctrine Update:** Embedded core intake doctrine principles in `scaffold_templates/claude-md/CLAUDE.md`.
+
+
 ## [0.1.5] - 2026-08-09
 
 ### Added
