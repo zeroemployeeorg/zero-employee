@@ -14,6 +14,7 @@ import importlib.resources as resources
 
 
 GENERATED_BOARD_FILES = ("STATE.md", "stream-index.md")
+ZEO_LOCAL_CACHE_ENTRIES = (".zeo/",)
 
 _TEMPLATE_NAMES = (
     "pre-commit",
@@ -51,17 +52,23 @@ def ensure_board_gitignore(corpus_root: pathlib.Path | str) -> bool:
         if ln.strip() and not ln.strip().startswith("#")
     }
     missing = [name for name in GENERATED_BOARD_FILES if name not in have]
-    if not missing:
+    cache_missing = [name for name in ZEO_LOCAL_CACHE_ENTRIES if name not in have]
+    if not missing and not cache_missing:
         return False
     body = existing
     if body and not body.endswith("\n"):
         body += "\n"
     if body and not body.endswith("\n\n"):
         body += "\n"
-    if "# zeo generated boards" not in existing:
+    if missing and "# zeo generated boards" not in existing:
         body += "# zeo generated boards (local views — do not commit)\n"
     for name in missing:
         body += f"{name}\n"
+    if cache_missing:
+        if "# zeo local cache" not in body:
+            body += "# zeo local cache (proposals — do not commit)\n"
+        for name in cache_missing:
+            body += f"{name}\n"
     path.write_text(body, encoding="utf-8")
     return True
 

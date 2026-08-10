@@ -20,6 +20,8 @@ mkdir my-org && cd my-org
 zeo init
 # optional IDE/agent bridges (opt-in; default is clean):
 zeo init --cursor --gemini          # or: zeo bridges --all
+# capture intent without YAML, then promote via coding-agent protocol:
+zeo intake "UI framework refresh idea"
 zeo sow new ducktyper ui-refresh --title "UI Framework Refresh"
 # or greenfield wrapper (also writes project CLAUDE.md):
 zeo scaffold ducktyper ui-refresh 1 "UI Framework Refresh"
@@ -29,8 +31,8 @@ zeo scaffold ducktyper ui-refresh 1 "UI Framework Refresh"
 
 - `claude-md/CLAUDE.md` — corpus marker / doctrine (Rev 17 scaffold)
 - `CLAUDE.md` — IDE entrypoint with `@import "claude-md/CLAUDE.md"`
-- `projects/`, `ruling/`
-- `.gitignore` entries for `STATE.md` and `stream-index.md` (local views — never commit)
+- `projects/`, `ruling/`, `intake/`
+- `.gitignore` entries for `STATE.md`, `stream-index.md`, and `.zeo/` (local views/cache — never commit)
 
 Tool bridges are **opt-in** via `--cursor`, `--gemini`, `--claude`, `--agents`, or `--all`:
 

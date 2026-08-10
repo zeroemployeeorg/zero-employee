@@ -11,13 +11,20 @@
 ## [Unreleased]
 
 ### Added
+- **Intake capture + grounded promote:** `zeo intake new|open|doctor|context|mission|propose|promote`
+  (and `zeo intake "title"`). Capture is frictionless; promotion requires evidence-backed
+  proposals from a coding agent. ZEO validates receipts, allocates SOW identity, and writes
+  Rev-17 frontmatter. Alias: `zeo sow from-intake`.
 - **SOW authoring ergonomics:** `zeo sow new|set|add|remove|draft` and `zeo doctor[--changed]`.
   ZEO serializes Rev-17 YAML, allocates `n`/filenames, validates transactionally, and (for draft)
   runs an Ollama body-only peer loop. Agents supply semantic values; ZEO owns governance syntax.
 - Shared `sow_authoring` write substrate + `ollama_client`; scaffold/mint reuse the serializer.
+- `zeo init` scaffolds `intake/` and gitignores `.zeo/` proposal cache.
 
 ### Changed
 - Canonical SOW filenames zero-pad `n` (`SOW-01`); `zeo scaffold` wraps `sow new`.
+- Intake status vocabulary: `OPEN|PROMOTED|DUPLICATE|REJECTED|PARKED` (legacy
+  `CHARTERED|DECLINED|SUPERSEDED` accepted as aliases on read).
 
 ## [0.1.4] - 2026-08-09
 

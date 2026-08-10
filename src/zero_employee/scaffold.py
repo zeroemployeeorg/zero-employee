@@ -164,16 +164,30 @@ def install_bridges(root: pathlib.Path | str, tools: Iterable[str] | None = None
 def init_corpus(root: pathlib.Path | str, tools: Iterable[str] | None = None) -> dict:
     """Scaffold a corpus: marker + IDE entrypoint + dirs; optional bridges."""
     from .hooks import ensure_board_gitignore
+    from .intake_authoring import ensure_zeo_gitignore
 
     root = pathlib.Path(root).resolve()
     root.mkdir(parents=True, exist_ok=True)
     created: list[str] = []
 
-    for d in ("claude-md", "projects", "ruling"):
+    for d in ("claude-md", "projects", "ruling", "intake"):
         p = root / d
         if not p.exists():
             p.mkdir(parents=True, exist_ok=True)
             created.append(f"{d}/")
+
+    intake_readme = root / "intake" / "README.md"
+    if not intake_readme.exists():
+        intake_readme.write_text(
+            "# Intake\n\n"
+            "Frictionless capture of operator intent before project/stream identity is known.\n\n"
+            "Create with `zeo intake new` / `zeo intake \"...\"`.\n"
+            "Promote grounded implementation work with "
+            "`zeo intake mission` → `zeo intake propose` → `zeo intake promote`.\n\n"
+            "Statuses: OPEN | PROMOTED | DUPLICATE | REJECTED | PARKED.\n",
+            encoding="utf-8",
+        )
+        created.append("intake/README.md")
 
     canon = root / "claude-md" / "CLAUDE.md"
     if not canon.exists():
@@ -185,7 +199,12 @@ def init_corpus(root: pathlib.Path | str, tools: Iterable[str] | None = None) ->
         entry.write_text(_read_template("CLAUDE.md"), encoding="utf-8")
         created.append("CLAUDE.md")
 
+    gitignore_touched = False
     if ensure_board_gitignore(root):
+        gitignore_touched = True
+    if ensure_zeo_gitignore(root):
+        gitignore_touched = True
+    if gitignore_touched:
         created.append(".gitignore")
 
     tools_set = normalize_tools(tools)

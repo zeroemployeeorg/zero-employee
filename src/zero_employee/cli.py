@@ -778,6 +778,11 @@ USAGE
                                   Mutate one frontmatter field (or list membership) safely.
   zeo sow draft <project> <stream> --title "..." [--peer human|agent] [--prompt FILE]
                                   Ollama body draft loop; ZEO owns frontmatter.
+  zeo sow from-intake FILE [project] [stream]
+                                  Lower-level alias for `zeo intake promote`.
+  zeo intake [new|open|edit|doctor|context|mission|propose|promote] ...
+                                  Frictionless intent capture → grounded SOW promotion.
+                                  `zeo intake "title"` creates OPEN intake without YAML.
   zeo doctor PATH | zeo doctor --changed
                                   Actionable readiness check for one SOW (or git-changed files).
   zeo bridges [path] --cursor|--gemini|--claude|--agents|--all
@@ -1113,7 +1118,7 @@ def _cmd_sow(argv: list[str]) -> int:
 
     if not argv:
         print(
-            "Usage: zeo sow new|set|add|remove|draft|doctor ...",
+            "Usage: zeo sow new|set|add|remove|draft|from-intake|doctor ...",
             file=sys.stderr,
         )
         return 2
@@ -1276,7 +1281,464 @@ def _cmd_sow(argv: list[str]) -> int:
             _print_sow_created(result, as_json=True)
         return 0
 
+    if sub == "from-intake":
+        return _cmd_intake(["promote", *rest])
+
     print(f"zeo sow: unknown subcommand {sub!r}", file=sys.stderr)
+    return 2
+
+
+def _cmd_intake(argv: list[str]) -> int:
+    """Frictionless intake capture and grounded promotion."""
+    import json as _json
+    import os
+    import tempfile
+
+    from .intake_authoring import (
+        build_mission,
+        create_intake,
+        create_intake_from_spec,
+        doctor_intake,
+        gather_context,
+        intake_identity,
+        list_intakes,
+        load_intake,
+        load_proposal,
+        open_editor_template,
+        parse_intake_sections,
+        promote_intake,
+        propose_intake,
+        resolve_intake_path,
+        status_counts,
+    )
+
+    root = _discover_root(None) or pathlib.Path(".").resolve()
+    cwd = pathlib.Path(".").resolve()
+    if (cwd / "claude-md" / "CLAUDE.md").is_file():
+        root = cwd
+
+    def _want_json(args: list[str]) -> bool:
+        return "--json" in args
+
+    def _parse_intake_new_flags(args: list[str]) -> tuple[list[str], dict]:
+        flags: dict = {
+            "title": None,
+            "what": None,
+            "why": None,
+            "done_when": None,
+            "not_this": [],
+            "context": [],
+            "spec": None,
+            "from": None,
+            "stdin": False,
+            "json": False,
+            "project_hint": None,
+            "stream_hint": None,
+            "edit": False,
+        }
+        positionals: list[str] = []
+        i = 0
+        while i < len(args):
+            a = args[i]
+            if a == "--title" and i + 1 < len(args):
+                flags["title"] = args[i + 1]
+                i += 2
+            elif a == "--what" and i + 1 < len(args):
+                flags["what"] = args[i + 1]
+                i += 2
+            elif a == "--why" and i + 1 < len(args):
+                flags["why"] = args[i + 1]
+                i += 2
+            elif a in ("--done-when", "--done_when") and i + 1 < len(args):
+                flags["done_when"] = args[i + 1]
+                i += 2
+            elif a in ("--not-this", "--not_this") and i + 1 < len(args):
+                flags["not_this"].append(args[i + 1])
+                i += 2
+            elif a == "--context" and i + 1 < len(args):
+                flags["context"].append(args[i + 1])
+                i += 2
+            elif a == "--spec" and i + 1 < len(args):
+                flags["spec"] = args[i + 1]
+                i += 2
+            elif a == "--from" and i + 1 < len(args):
+                flags["from"] = args[i + 1]
+                i += 2
+            elif a == "--stdin":
+                flags["stdin"] = True
+                i += 1
+            elif a == "--json":
+                flags["json"] = True
+                i += 1
+            elif a == "--edit":
+                flags["edit"] = True
+                i += 1
+            elif a in ("--project-hint", "--project") and i + 1 < len(args):
+                flags["project_hint"] = args[i + 1]
+                i += 2
+            elif a in ("--stream-hint", "--stream") and i + 1 < len(args):
+                flags["stream_hint"] = args[i + 1]
+                i += 2
+            elif a.startswith("-"):
+                print(f"zeo intake: unknown flag {a}", file=sys.stderr)
+                flags["_error"] = True
+                return positionals, flags
+            else:
+                positionals.append(a)
+                i += 1
+        return positionals, flags
+
+    if not argv:
+        counts = status_counts(root)
+        for st, n in counts.items():
+            print(f"{st:12}{n}")
+        return 0
+
+    known = {
+        "new",
+        "open",
+        "edit",
+        "doctor",
+        "context",
+        "mission",
+        "investigate",
+        "propose",
+        "promote",
+        "list",
+        "status",
+    }
+    if argv[0] not in known and not argv[0].startswith("-"):
+        result, err = create_intake(root, title=" ".join(argv))
+        if result is None:
+            print(f"✗ intake not written\nReason: {err}", file=sys.stderr)
+            return 1
+        print(f"Created {result.path}")
+        return 0
+
+    sub = argv[0]
+    rest = argv[1:]
+
+    if sub == "status":
+        counts = status_counts(root)
+        for st, n in counts.items():
+            print(f"{st:12}{n}")
+        return 0
+
+    if sub in ("open", "list"):
+        rows = [r for r in list_intakes(root) if r["status"] == "OPEN"]
+        if _want_json(rest):
+            print(_json.dumps(rows, indent=2, default=str))
+            return 0
+        if not rows:
+            print("(no OPEN intakes)")
+            return 0
+        for r in rows:
+            print(f"OPEN  {r['id']}  project={r['project']}  filed {r['created']}")
+        return 0
+
+    if sub == "new":
+        positionals, flags = _parse_intake_new_flags(rest)
+        if flags.get("_error"):
+            return 2
+        if flags.get("spec") is not None:
+            raw = sys.stdin.read() if flags["spec"] == "-" else pathlib.Path(flags["spec"]).read_text(encoding="utf-8")
+            spec = _json.loads(raw)
+            result, err = create_intake_from_spec(root, spec)
+            if result is None:
+                print(f"✗ intake not written\nReason: {err}", file=sys.stderr)
+                return 1
+            if flags["json"]:
+                print(result.model_dump_json(indent=2))
+            else:
+                print(f"Created {result.path}")
+            return 0
+
+        raw_body = None
+        if flags["stdin"]:
+            raw_body = sys.stdin.read()
+        elif flags.get("from"):
+            raw_body = pathlib.Path(flags["from"]).read_text(encoding="utf-8")
+        elif not sys.stdin.isatty() and not flags.get("what") and not flags.get("title") and not positionals:
+            raw_body = sys.stdin.read()
+
+        title = flags.get("title")
+        if positionals and not title:
+            title = " ".join(positionals)
+
+        only_title = (
+            title
+            and not flags.get("what")
+            and raw_body is None
+            and not flags.get("why")
+            and not flags.get("done_when")
+            and not flags.get("not_this")
+            and not flags.get("context")
+        )
+        if only_title and sys.stdin.isatty() and not flags["json"]:
+            editor = os.environ.get("EDITOR") or os.environ.get("VISUAL") or "vi"
+            with tempfile.NamedTemporaryFile("w+", suffix=".md", delete=False, encoding="utf-8") as tmp:
+                tmp.write(open_editor_template(title))
+                tmp_path = tmp.name
+            try:
+                rc = subprocess.call([editor, tmp_path])
+                if rc != 0:
+                    print("editor exited non-zero", file=sys.stderr)
+                    return 1
+                raw_body = pathlib.Path(tmp_path).read_text(encoding="utf-8")
+            finally:
+                pathlib.Path(tmp_path).unlink(missing_ok=True)
+            result, err = create_intake(
+                root,
+                title=title,
+                raw_body=raw_body,
+                project_hint=flags.get("project_hint"),
+                stream_hint=flags.get("stream_hint"),
+            )
+        else:
+            result, err = create_intake(
+                root,
+                title=title,
+                what=flags.get("what"),
+                why=flags.get("why"),
+                done_when=flags.get("done_when"),
+                not_this=flags.get("not_this") or None,
+                context=flags.get("context") or None,
+                raw_body=raw_body,
+                project_hint=flags.get("project_hint"),
+                stream_hint=flags.get("stream_hint"),
+            )
+        if result is None:
+            print(f"✗ intake not written\nReason: {err}", file=sys.stderr)
+            return 1
+        if flags["json"]:
+            print(result.model_dump_json(indent=2))
+        else:
+            print(f"Created {result.path}")
+        return 0
+
+    if sub == "edit":
+        if not rest:
+            print("Usage: zeo intake edit FILE|latest", file=sys.stderr)
+            return 2
+        try:
+            path = resolve_intake_path(root, rest[0])
+        except FileNotFoundError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        editor = os.environ.get("EDITOR") or os.environ.get("VISUAL") or "vi"
+        return subprocess.call([editor, str(path)])
+
+    if sub == "doctor":
+        if not rest:
+            print("Usage: zeo intake doctor FILE|latest", file=sys.stderr)
+            return 2
+        try:
+            path = resolve_intake_path(root, rest[0])
+        except FileNotFoundError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        ready, errors, advice = doctor_intake(path, root=root)
+        for e in errors:
+            print(f"✗ {e}")
+        for a in advice:
+            print(f"· {a}")
+        if ready:
+            print("✓ parseable / WHAT present / status known")
+            print("Ready for SOW refinement.")
+            return 0
+        print("Not ready.")
+        return 1
+
+    if sub == "context":
+        if not rest:
+            print("Usage: zeo intake context FILE [--json]", file=sys.stderr)
+            return 2
+        try:
+            path = resolve_intake_path(root, rest[0])
+        except FileNotFoundError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        ctx = gather_context(root, path)
+        if _want_json(rest):
+            print(_json.dumps(ctx, indent=2))
+            return 0
+        print(f"Intake: {ctx['intake']}")
+        print("Terms extracted:")
+        for t in ctx.get("terms") or []:
+            print(f"  {t}")
+        print("Likely code matches:")
+        for p in ctx.get("likely_code_matches") or []:
+            print(f"  {p}")
+        print("Likely tests:")
+        for p in ctx.get("likely_tests") or []:
+            print(f"  {p}")
+        if ctx.get("recent_commits"):
+            print("Recent commits touching matches:")
+            for c in ctx["recent_commits"]:
+                print(f"  {c}")
+        return 0
+
+    if sub in ("mission", "investigate"):
+        if not rest:
+            print(f"Usage: zeo intake {sub} FILE [--json]", file=sys.stderr)
+            return 2
+        try:
+            path = resolve_intake_path(root, rest[0])
+        except FileNotFoundError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        mission = build_mission(root, path)
+        if _want_json(rest):
+            print(_json.dumps(mission, indent=2))
+            return 0
+        print(f"Mission for {mission['intake']}")
+        print(f"Goal: {mission['goal']}")
+        print(f"repo_head: {mission.get('repo_head')}")
+        print("Questions:")
+        for q in mission["questions"]:
+            print(f"  - {q}")
+        print(f"Submit: {mission['submission']['command']}")
+        print(f"Then:   {mission['submission']['then']}")
+        return 0
+
+    if sub == "propose":
+        if not rest:
+            print("Usage: zeo intake propose FILE --spec -|path", file=sys.stderr)
+            return 2
+        file_ref = rest[0]
+        spec_src = None
+        i = 1
+        while i < len(rest):
+            if rest[i] == "--spec" and i + 1 < len(rest):
+                spec_src = rest[i + 1]
+                i += 2
+            else:
+                i += 1
+        if spec_src is None:
+            print("zeo intake propose: --spec is required", file=sys.stderr)
+            return 2
+        try:
+            path = resolve_intake_path(root, file_ref)
+        except FileNotFoundError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        raw = sys.stdin.read() if spec_src == "-" else pathlib.Path(spec_src).read_text(encoding="utf-8")
+        spec = _json.loads(raw)
+        out_path, proposal, err = propose_intake(root, path, spec)
+        if err:
+            print(f"✗ proposal rejected\nReason: {err}", file=sys.stderr)
+            return 1
+        print(f"✓ proposal saved {out_path}")
+        print(f"  observations: {len(proposal.observations)}")
+        return 0
+
+    if sub == "promote":
+        if not rest:
+            print("Usage: zeo intake promote FILE [--spec ...] [--project P] [--stream S]", file=sys.stderr)
+            return 2
+        file_ref = rest[0]
+        flags = {
+            "spec": None,
+            "project": None,
+            "stream": None,
+            "title": None,
+            "allow_ungrounded": False,
+            "json": False,
+        }
+        i = 1
+        while i < len(rest):
+            a = rest[i]
+            if a == "--spec" and i + 1 < len(rest):
+                flags["spec"] = rest[i + 1]
+                i += 2
+            elif a == "--project" and i + 1 < len(rest):
+                flags["project"] = rest[i + 1]
+                i += 2
+            elif a == "--stream" and i + 1 < len(rest):
+                flags["stream"] = rest[i + 1]
+                i += 2
+            elif a == "--title" and i + 1 < len(rest):
+                flags["title"] = rest[i + 1]
+                i += 2
+            elif a == "--allow-ungrounded":
+                flags["allow_ungrounded"] = True
+                i += 1
+            elif a == "--json":
+                flags["json"] = True
+                i += 1
+            else:
+                if flags["project"] is None:
+                    flags["project"] = a
+                elif flags["stream"] is None:
+                    flags["stream"] = a
+                i += 1
+        try:
+            path = resolve_intake_path(root, file_ref)
+        except FileNotFoundError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        spec = None
+        if flags["spec"] is not None:
+            raw = sys.stdin.read() if flags["spec"] == "-" else pathlib.Path(flags["spec"]).read_text(encoding="utf-8")
+            spec = _json.loads(raw)
+
+        if sys.stdin.isatty() and not flags["json"] and spec is None:
+            fm, body = load_intake(path)
+            sections = parse_intake_sections(body)
+            iid = intake_identity(fm, path)
+            prop = load_proposal(root, iid)
+            print("Intake:")
+            print(f"  {sections.get('WHAT') or iid}")
+            proj = (
+                flags["project"]
+                or fm.get("project_hint")
+                or fm.get("project")
+                or (prop.destination.project if prop and prop.destination else "?")
+            )
+            strm = (
+                flags["stream"]
+                or fm.get("stream_hint")
+                or (prop.destination.stream if prop and prop.destination else "?")
+            )
+            print("Suggested project:")
+            print(f"  {proj}")
+            print("Suggested stream:")
+            print(f"  {strm}")
+            print("Done when:")
+            print(f"  {sections.get('DONE WHEN') or '(from proposal)'}")
+            try:
+                ans = input("Create SOW? [Y/n] ").strip().lower()
+            except EOFError:
+                ans = "y"
+            if ans not in ("", "y", "yes"):
+                print("Aborted.")
+                return 1
+
+        result, err = promote_intake(
+            root,
+            path,
+            spec=spec,
+            project=flags["project"],
+            stream=flags["stream"],
+            title=flags["title"],
+            allow_ungrounded=flags["allow_ungrounded"],
+            cwd=cwd,
+        )
+        if result is None:
+            print(f"✗ promote failed\nReason: {err}", file=sys.stderr)
+            return 1
+        if flags["json"]:
+            print(result.model_dump_json(indent=2))
+            return 0
+        for c in result.checks:
+            print(f"✓ {c}")
+        print("")
+        print(result.sow_path)
+        print("")
+        print("✓ intake marked PROMOTED")
+        return 0
+
+    print(f"zeo intake: unknown subcommand {sub!r}", file=sys.stderr)
     return 2
 
 
@@ -1406,6 +1868,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_bridges(args[1:])
     if args and args[0] == "sow":
         return _cmd_sow(args[1:])
+    if args and args[0] == "intake":
+        return _cmd_intake(args[1:])
     if args and args[0] == "doctor":
         return _cmd_doctor(args[1:])
     if args and args[0] == "artifact":

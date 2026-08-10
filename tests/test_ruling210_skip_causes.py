@@ -34,17 +34,36 @@ def _write(tmp_path, rel, body):
 
 def test_genre_unknown_warn_now_prints_MEASURED_nonzero(tmp_path, capsys):
     """The exact command RULING-210 s2 measured as returning 0:
-    `zeo <file> | grep -c genre-unknown`. This asserts the fixed side: >0."""
+    `zeo <file> | grep -c genre-unknown`. This asserts the fixed side: >0.
+
+    Intake is now a graded genre (intake_authoring); use a still-open-world genre
+    so the WARN path remains covered.
+    """
     f = _write(
         tmp_path,
-        "intake/2026-08-07-x.md",
-        "---\nintake: x\nproject: governance-layer\ngenre: intake\ncreated: 2026-08-07\nstatus: OPEN\n---\n\nWHAT: x\n",
+        "misc/2026-08-07-x.md",
+        "---\nnote: x\nproject: governance-layer\ngenre: session-record\ncreated: 2026-08-07\nstatus: OPEN\n---\n\nbody\n",
     )
     rc = cli.main([str(f)])
     out = capsys.readouterr().out
     assert rc == 0  # a SKIP is not a FAIL - the file isn't graded, not condemned
     assert out.count("genre-unknown") >= 1, "the WARN core.py already builds must render"
     assert "has no grader" in out
+
+
+def test_intake_genre_is_graded_not_genre_unknown(tmp_path, capsys):
+    """Regression: intake used to fall through to genre-unknown SKIP; now graded."""
+    f = _write(
+        tmp_path,
+        "intake/2026-08-07-x.md",
+        "---\nintake: x\nid: x\nproject: governance-layer\ngenre: intake\n"
+        "created: 2026-08-07\nupdated: 2026-08-07\nstatus: OPEN\n---\n\nWHAT: x\nDONE WHEN: y\n",
+    )
+    rc = cli.main([str(f)])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "genre-unknown" not in out
+    assert "1 passed" in out
 
 
 def test_genre_unknown_finding_message_is_the_real_one_not_paraphrased(tmp_path, capsys):
