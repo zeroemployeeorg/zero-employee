@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.7] - 2026-08-10
+
+### Added
+- **Orientation OS (`zeo` / `zeo orient [--json]`):** Replaced static usage dumps on bare `zeo` with a contextual dashboard for humans and structured JSON (`protocol_version: 1`) for agents.
+- **Progressive Help (`zeo help ` / `zeo help --all`):** Curated progressive documentation topics (`intake`, `sow`, `rulings`, `doctrine`, `corpus`, `hooks`, `cost`).
+- **Creation Router (`zeo new`):** Interactive prompt for creating Intakes, SOWs, or Projects without needing hand-written syntax.
+- **Active Work Navigator (`zeo work [context]`):** Surfaces active SOWs, waiting items, recently touched files, and open intakes across corpus or stream scopes.
+- **Next-Action Determination (`zeo next [--json]`):** Clear prioritization policy that recommends the immediate next step for human operators and autonomous agents.
+- **Subcommand Aliases:** Canonical CLI verbs (`zeo board`, `zeo triage`, `zeo digest`, `zeo index streams`, `zeo index rulings`, `zeo mint`) alongside legacy flag forms.
+
+
 ## [0.1.6] - 2026-08-10
 
 ### Added
