@@ -136,6 +136,80 @@ def test_pre_commit_blocks_bad_staged_sow(tmp_path):
     assert rc == 1
 
 
+def test_pre_commit_catches_a_sow_n_collision_with_an_already_committed_sow(tmp_path):
+    """Paid live in TWO corpora (profrodai/org's MOTION-ELEMENTS-SOW-1, zeroemployeeorg/
+    org's quackverse-coverage-90 SOW-10) before this test existed: _commit_check_corpus
+    was built to catch a cross-file collision the per-file --commit-check structurally
+    cannot see (one staged file's files_fm has one entry, nothing to collide with) - but
+    it only ever scanned ruling/ homes and only ever ran when a RULING file was staged.
+    A staged SOW colliding with an ALREADY-COMMITTED SOW's n/rev was invisible to every
+    commit, forever, regardless of what else was staged. This is the exact shape,
+    reproduced end to end through the real git hook path, not just the linter function."""
+    root = _corpus(tmp_path)
+    # schema_rev:17 on the staged SOWs needs a canonical Rev to compare against, or the
+    # per-file --commit-check fails closed on an unrelated schema-nocanon finding before
+    # the collision check ever gets a chance to matter for this test's assertion.
+    (root / "claude-md" / "CLAUDE.md").write_text(
+        "# CLAUDE.md\n<!-- DOC-DATE: 2026-08-16 (Rev 17) -->\n", encoding="utf-8"
+    )
+    subprocess.run(["git", "-C", str(root), "add", "claude-md"], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(root), "commit", "-m", "init"], check=True, capture_output=True)
+
+    sow_dir = root / "projects" / "demo" / "sow" / "teststream"
+    sow_dir.mkdir(parents=True)
+    frontmatter = (
+        "---\nsow: teststream\nproject: demo\nn: 1\nrev: a\nschema_rev: 17\n"
+        "created: 2026-08-16\nupdated: 2026-08-16\nstatus: SHIPPED\n"
+        "lifecycle: CLOSEOUT-RECORD\nissue_first: true\nledger: []\n---\n\nbody\n"
+    )
+    first = sow_dir / "TESTSTREAM-SOW-1-first.md"
+    first.write_text(frontmatter, encoding="utf-8")
+    subprocess.run(["git", "-C", str(root), "add", str(first)], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(root), "commit", "-m", "first"], check=True, capture_output=True)
+
+    # A second SOW sharing the exact same (n, rev) - a real collision, no ruling file
+    # anywhere in this commit, which is precisely the case the old ruling-gated trigger
+    # would have missed entirely.
+    second = sow_dir / "TESTSTREAM-SOW-1-second.md"
+    second.write_text(frontmatter.replace("body", "body 2"), encoding="utf-8")
+    subprocess.run(["git", "-C", str(root), "add", str(second)], check=True, capture_output=True)
+
+    rc = run_pre_commit(root)
+    assert rc == 1, "an n-collision with an already-committed SOW must block the commit"
+
+
+def test_pre_commit_allows_a_legitimate_rev_chain_no_collision(tmp_path):
+    """The fix must not blind the gate the other way: two files sharing n but with
+    DIFFERENT rev values are a legitimate rev-chain (doctrine B), not a collision, and
+    must not be blocked."""
+    root = _corpus(tmp_path)
+    (root / "claude-md" / "CLAUDE.md").write_text(
+        "# CLAUDE.md\n<!-- DOC-DATE: 2026-08-16 (Rev 17) -->\n", encoding="utf-8"
+    )
+    subprocess.run(["git", "-C", str(root), "add", "claude-md"], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(root), "commit", "-m", "init"], check=True, capture_output=True)
+
+    sow_dir = root / "projects" / "demo" / "sow" / "teststream"
+    sow_dir.mkdir(parents=True)
+    fm_a = (
+        "---\nsow: teststream\nproject: demo\nn: 1\nrev: a\nschema_rev: 17\n"
+        "created: 2026-08-16\nupdated: 2026-08-16\nstatus: SHIPPED\n"
+        "lifecycle: CLOSEOUT-RECORD\nissue_first: true\nledger: []\n---\n\nrev a\n"
+    )
+    first = sow_dir / "TESTSTREAM-SOW-1-a.md"
+    first.write_text(fm_a, encoding="utf-8")
+    subprocess.run(["git", "-C", str(root), "add", str(first)], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(root), "commit", "-m", "rev a"], check=True, capture_output=True)
+
+    fm_b = fm_a.replace("rev: a", "rev: b").replace("rev a", "rev b")
+    second = sow_dir / "TESTSTREAM-SOW-1-b.md"
+    second.write_text(fm_b, encoding="utf-8")
+    subprocess.run(["git", "-C", str(root), "add", str(second)], check=True, capture_output=True)
+
+    rc = run_pre_commit(root)
+    assert rc == 0, "distinct rev values on shared n are a rev-chain, not a collision"
+
+
 def test_session_start_and_stop_smoke(tmp_path):
     root = _corpus(tmp_path)
     assert run_session_start(root) == 0

@@ -25,7 +25,6 @@ _TEMPLATE_NAMES = (
 )
 
 _SOW_RULING_STAGED_RE = re.compile(r"(^|/)(sow|ruling)/.*\.md$")
-_RULING_STAGED_RE = re.compile(r"(^|/)ruling/RULING-[0-9]+-")
 
 
 def _templates_dir() -> pathlib.Path:
@@ -204,11 +203,18 @@ def run_pre_commit(corpus_root: pathlib.Path | str | None = None) -> int:
             print(f"-- zeo rejected: {rel}", file=sys.stderr)
             failed = True
 
-    if any(_RULING_STAGED_RE.search(f) for f in staged):
-        rc = cli.main(["--commit-check-corpus", str(root)])
-        if rc != 0:
-            print("-- zeo rejected: ruling-number collision, corpus-wide", file=sys.stderr)
-            failed = True
+    # --commit-check-corpus now covers BOTH ruling-number collisions and SOW
+    # n-collisions in one pass (extended 2026-08-16, same day the SOW half of this
+    # gap was found live in two separate corpora - see cli.py's _commit_check_corpus
+    # docstring). It must run on EVERY staged SOW/ruling commit, not only when a
+    # ruling file is among them: an n-collision is a SOW-namespace defect and can
+    # land from a commit that touches no ruling/ file at all - the previous
+    # ruling-only gate would have missed exactly that shape, which is how
+    # MOTION-ELEMENTS-SOW-1 and quackverse-coverage-90 SOW-10 both slipped through.
+    rc = cli.main(["--commit-check-corpus", str(root)])
+    if rc != 0:
+        print("-- zeo rejected: a ruling-number or SOW n-collision, corpus-wide", file=sys.stderr)
+        failed = True
 
     if failed:
         print(

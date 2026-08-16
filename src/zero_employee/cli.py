@@ -412,14 +412,45 @@ def _commit_check_corpus(root) -> int:
             fm = extract_frontmatter(f.read_text(encoding="utf-8", errors="replace"))
             if isinstance(fm, dict):
                 files_fm.append((str(f), fm))
-    collisions = check_ruling_corpus(files_fm)
-    if not collisions:
-        print(f"COMMIT-CHECK-CORPUS: 0 ruling-number collisions across {len(files_fm)} ruling file(s)")
+    ruling_collisions = check_ruling_corpus(files_fm)
+
+    # SOW n-collision, same shape, same gap, fixed at the same time it was found:
+    # check_corpus (n-collision) had the IDENTICAL cross-file blindness this function
+    # was built to close for rulings - defined, tested, callable, but never reachable
+    # from the actual pre-commit hook path, because that path only ever sees ONE
+    # staged file at a time (--commit-check) or was gated to run only when a RULING
+    # was among the staged files (this function, historically). A staged SOW that
+    # collides with an already-committed SOW's n/rev was invisible to every commit,
+    # forever - proven live: MOTION-ELEMENTS-SOW-1 (profrodai/org) and
+    # quackverse-coverage-90 SOW-10 (zeroemployeeorg/org) both landed this way and sat
+    # undetected until a full corpus `zeo .` scan happened to be run by hand. Fixed by
+    # extending this SAME once-per-commit corpus pass to the SOW namespace, not a
+    # second bolt-on gate - one collision-detection pass, both namespaces.
+    sow_files_fm = []
+    for f in iter_sow_files(pathlib.Path(root)):
+        fm = extract_frontmatter(pathlib.Path(f).read_text(encoding="utf-8", errors="replace"))
+        if isinstance(fm, dict):
+            sow_files_fm.append((str(f), fm))
+    sow_collisions = check_corpus(sow_files_fm, root=root)
+    sow_collisions = {p: [fi for fi in fis if fi.code == "n-collision"] for p, fis in sow_collisions.items()}
+    sow_collisions = {p: fis for p, fis in sow_collisions.items() if fis}
+
+    if not ruling_collisions and not sow_collisions:
+        print(
+            f"COMMIT-CHECK-CORPUS: 0 ruling-number collisions across {len(files_fm)} ruling "
+            f"file(s), 0 SOW n-collisions across {len(sow_files_fm)} SOW file(s)"
+        )
         return 0
-    print(f"COMMIT-CHECK-CORPUS: {len(collisions)} file(s) in a ruling-number collision")
-    for path, findings in sorted(collisions.items()):
-        for fi in findings:
-            print(f"    {_SYM.get(fi.severity, '?')} [{fi.code}] {path}: {fi.message}")
+    if ruling_collisions:
+        print(f"COMMIT-CHECK-CORPUS: {len(ruling_collisions)} file(s) in a ruling-number collision")
+        for path, findings in sorted(ruling_collisions.items()):
+            for fi in findings:
+                print(f"    {_SYM.get(fi.severity, '?')} [{fi.code}] {path}: {fi.message}")
+    if sow_collisions:
+        print(f"COMMIT-CHECK-CORPUS: {len(sow_collisions)} file(s) in a SOW n-collision")
+        for path, findings in sorted(sow_collisions.items()):
+            for fi in findings:
+                print(f"    {_SYM.get(fi.severity, '?')} [{fi.code}] {path}: {fi.message}")
     return 1
 
 
