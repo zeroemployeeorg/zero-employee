@@ -349,42 +349,56 @@ def _stream_of(path, root=None):
     return _stream_prefix(pathlib.Path(path).name)
 
 
+# TOMBSTONE-AWARE (same class as check_ruling_corpus's _NOT_LIVE, core.py:2116 - paid live
+# at profrodai/org 2026-08-16, one turn after the ruling fix): a VOIDED, SUPERSEDED, or
+# STALE SOW sharing an n/rev with a live file is the normal, expected shape of a
+# caught-and-corrected duplicate-numbering mistake - not a live, unresolved collision. A
+# distinct constant from _NOT_LIVE: SOWs carry a third genuinely-dead status, STALE, that
+# rulings do not. Deliberately NOT the broader STATUS_RESTING set - CLOSEOUT/SHIPPED/
+# HANDOVER/HELD/BLOCKED/FINDING are terminal-but-still-THE-record states; a second file
+# claiming their n/rev is still a live collision, and must keep erroring.
+_NOT_LIVE_SOW = {"VOIDED", "SUPERSEDED", "STALE"}
+
+
 def check_corpus(files_fm, root=None) -> dict:
     """files_fm: iterable of (path, fm). Per-project (V1-D): n-collision and n-gap
     scope to each PROJECT (project_of), so the same n in two projects is not a
     collision and gaps do not bleed across projects. Pre-migration all-None files
     group as one flat-legacy set = the prior behavior, preserved."""
     out = defaultdict(list)
-    numbered = []  # (project, n, path, rev)
+    numbered = []  # (project, n, path, rev, status)
     for path, fm in files_fm:
         n = fm.get("n")
         if n is None:
             continue
         rev = fm.get("rev")
         rev = str(rev).strip() if rev is not None else None
+        status = str(fm.get("status", "")).strip().upper()
         try:
-            numbered.append((project_of(path, root), _stream_of(path, root), int(n), path, rev))
+            numbered.append((project_of(path, root), _stream_of(path, root), int(n), path, rev, status))
         except (TypeError, ValueError):
             continue
     by_pn = defaultdict(list)
-    for proj, stream, n, path, rev in numbered:
+    for proj, stream, n, path, rev, status in numbered:
         # STREAM enters the key ONLY for MIGRATED files. For those the stream is a path fact
         # and cross-stream n reuse is PERMANENTLY CORRECT (the schema: n is fresh per stream
         # dir). For FLAT-LEGACY files the group must stay whole so doctrine's prefix partition
         # still runs and still emits its cross-stream WARN - keying flat files by stream made
         # every group single-stream and deleted that ruled behaviour outright.
-        by_pn[(proj, stream if proj is not None else None, n)].append((path, rev))
+        by_pn[(proj, stream if proj is not None else None, n)].append((path, rev, status))
     for (proj, stream, n), entries in by_pn.items():
         if len(entries) <= 1:
             continue
-        names = ", ".join(sorted(pathlib.Path(x).name for x, _ in entries))
+        names = ", ".join(sorted(pathlib.Path(x).name for x, _, _ in entries))
         if proj is not None:
             # migrated project: same-project n reuse collides ONLY when rev also repeats
             # (doctrine B). Distinct revs = one identity's rev-chain, not a collision.
             by_rev = defaultdict(list)
-            for path, rev in entries:
-                by_rev[rev].append(path)
-            for rev, rpaths in by_rev.items():
+            for path, rev, status in entries:
+                by_rev[rev].append((path, status))
+            for rev, rentries in by_rev.items():
+                # TOMBSTONE-AWARE: only LIVE claimants count toward "real" duplicate.
+                rpaths = [p for p, st in rentries if st not in _NOT_LIVE_SOW]
                 if len(rpaths) > 1:
                     dup = ", ".join(sorted(pathlib.Path(x).name for x in rpaths))
                     for p in rpaths:
@@ -401,15 +415,18 @@ def check_corpus(files_fm, root=None) -> dict:
         # collide ONLY when rev also repeats (doctrine B): distinct revs are one
         # identity's rev-chain (pass); a repeated rev is a real duplicate (ERROR).
         by_prefix = defaultdict(list)
-        for path, rev in entries:
-            by_prefix[_stream_prefix(pathlib.Path(path).name)].append((path, rev))
+        for path, rev, status in entries:
+            by_prefix[_stream_prefix(pathlib.Path(path).name)].append((path, rev, status))
         for pfx, pentries in by_prefix.items():
             if len(pentries) > 1:
                 # same stream, same n, multiple files: partition by rev
                 by_rev = defaultdict(list)
-                for path, rev in pentries:
-                    by_rev[rev].append(path)
-                real_dups = {r: v for r, v in by_rev.items() if len(v) > 1}
+                for path, rev, status in pentries:
+                    by_rev[rev].append((path, status))
+                # TOMBSTONE-AWARE: same filter as the migrated-project branch above - a
+                # VOIDED/SUPERSEDED/STALE claimant does not count toward "real" duplicate.
+                real_dups = {r: [p for p, st in v if st not in _NOT_LIVE_SOW] for r, v in by_rev.items()}
+                real_dups = {r: v for r, v in real_dups.items() if len(v) > 1}
                 if real_dups:
                     for rev, rpaths in real_dups.items():
                         dup = ", ".join(sorted(pathlib.Path(x).name for x in rpaths))
@@ -431,7 +448,7 @@ def check_corpus(files_fm, root=None) -> dict:
                     )
                 )
     by_proj = defaultdict(list)
-    for proj, _stream, n, path, rev in numbered:  # gaps stay per-PROJECT
+    for proj, _stream, n, path, rev, _status in numbered:  # gaps stay per-PROJECT
         by_proj[proj].append((n, path))
     for proj, seq in by_proj.items():
         ns = sorted({n for n, _ in seq})
