@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# zero-employee pre-push gate: the full test suite (~12s).
+#
+# Split from pre-commit deliberately. Commits are frequent and want a gate
+# measured in milliseconds; a push is the act that makes work everyone else's
+# problem, and can afford twelve seconds. This is also the last checkpoint
+# before CI - and CI here runs pytest only, so a red suite reaching origin is
+# a red main.
+#
+# TO BYPASS DELIBERATELY: git push --no-verify.
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+if ! command -v uv >/dev/null 2>&1; then
+  echo "pre-push: uv not found; cannot run the test gate." >&2
+  echo "  Bypass deliberately with: git push --no-verify" >&2
+  exit 1
+fi
+
+echo "pre-push: running the test suite..."
+if ! uv run python -m pytest -q; then
+  echo "" >&2
+  echo "PUSH BLOCKED: the test suite is RED." >&2
+  echo "  Bypass: git push --no-verify   (deliberate escape hatch)" >&2
+  exit 1
+fi
+
+exit 0

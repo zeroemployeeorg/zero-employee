@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# zero-employee pre-commit gate.
+#
+# WHY THIS EXISTS: on 2026-08-16 this seat committed a misformatted test file
+# (904ab0f) and nothing caught it. There was no pre-commit hook, and CI runs
+# pytest ONLY - no format-check, no lint - so `make verify` sat RED on main
+# while every automated signal stayed green. Found by hand, hours later.
+#
+# TRACKED ON PURPOSE: .git/hooks is not tracked by git and does not survive a
+# clone. This lives in .githooks/ (tracked) and is activated by
+# `git config core.hooksPath .githooks`, which `make setup` does for you.
+#
+# WHAT IT ENFORCES: format-check + lint only. Measured at ~0.15s, fast enough
+# that no one is tempted to bypass it. The full test suite (~12s) is
+# deliberately NOT here - it belongs at pre-push and in CI. A pre-commit hook
+# people route around is worse than no hook.
+#
+# TO BYPASS DELIBERATELY: git commit --no-verify. That is a real escape hatch
+# for a real reason, not a workaround to reach for when the gate is
+# inconvenient - if the gate is wrong, fix the gate.
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+# Only gate Python changes. A docs- or config-only commit should not pay for a
+# lint pass that cannot possibly have anything to say about it.
+if ! git diff --cached --name-only --diff-filter=ACMR | grep -qE '\.py$'; then
+  exit 0
+fi
+
+if ! command -v uv >/dev/null 2>&1; then
+  echo "pre-commit: uv not found; cannot run the format/lint gate." >&2
+  echo "  Install uv, or bypass deliberately with: git commit --no-verify" >&2
+  exit 1
+fi
+
+fail() {
+  echo "" >&2
+  echo "COMMIT BLOCKED by the zero-employee pre-commit gate: $1" >&2
+  echo "  Fix:    make format   (then re-stage: git add -u)" >&2
+  echo "  Bypass: git commit --no-verify   (deliberate escape hatch)" >&2
+  exit 1
+}
+
+# format-check never mutates files - it is safe to run against the working
+# tree. It is checked BEFORE lint because a formatting fix often resolves
+# lint noise, and reporting the cheaper, more mechanical failure first gives
+# a clearer next action.
+uv run ruff format --check . >/dev/null 2>&1 || fail "ruff format-check"
+uv run ruff check . >/dev/null 2>&1 || {
+  echo "" >&2
+  uv run ruff check . >&2 || true
+  fail "ruff lint"
+}
+
+exit 0

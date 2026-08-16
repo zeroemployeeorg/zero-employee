@@ -68,11 +68,19 @@ install: ## Install zeo in editable mode
 	@$(UV) pip install -e ".[dev]" --python $(PYTHON) 2>/dev/null || $(UV) pip install -e . --python $(PYTHON)
 	@echo "${GREEN}✓ zeo installed${RESET}"
 
+.PHONY: hooks
+hooks: ## Activate the tracked git hooks in .githooks (survives a fresh clone)
+	@echo "${BLUE}Activating tracked git hooks...${RESET}"
+	@git config core.hooksPath .githooks
+	@chmod +x .githooks/* 2>/dev/null || true
+	@echo "${GREEN}✓ core.hooksPath = .githooks (pre-commit: format+lint, pre-push: tests)${RESET}"
+
 .PHONY: setup
 setup: ## Create environment and install all dependencies
 	@echo "${BLUE}Setting up zeo development environment...${RESET}"
 	@$(MAKE) --no-print-directory env
 	@$(MAKE) --no-print-directory install
+	@$(MAKE) --no-print-directory hooks
 	@$(MAKE) --no-print-directory check-env
 
 .PHONY: check-env

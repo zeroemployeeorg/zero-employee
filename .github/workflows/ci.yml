@@ -14,7 +14,19 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-      - name: Sync and test
-        run: |
-          uv sync --group dev
-          uv run python -m pytest -q
+      - name: Sync
+        run: uv sync --group dev
+
+      # Mirrors the local pre-commit hook (.githooks/pre-commit). CI ran pytest
+      # ONLY until 2026-08-16, so a misformatted commit passed CI green and sat
+      # on main - which is exactly what happened at 904ab0f. A local hook alone
+      # cannot close this: hooks are bypassable (--no-verify) and only apply to
+      # people who ran `make setup`. The gate has to exist on both sides.
+      - name: Format check
+        run: uv run ruff format --check .
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Test
+        run: uv run python -m pytest -q
