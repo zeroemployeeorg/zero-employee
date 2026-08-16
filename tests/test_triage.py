@@ -74,6 +74,38 @@ def test_triage_dark_bucket_counts_flat_files_the_meter_must_not_under_report(tm
     assert "FLAT files" in out and "Questions-for-Chad.md" in out
 
 
+def test_inbox_a_valid_resolved_by_promotes_past_answered_by_ruling(tmp_path, capsys):
+    """editorial-recon SOW-1 / RULING-067, paid 2026-08-16: `resolved` and `superseded`
+    both excluded `answered`, but `ans` did not exclude `resolved` - so a row cited by a
+    ruling's requested_by was PERMANENTLY stuck at "answered-by-ruling" even after the
+    stream did exactly what that bucket's own message told it to do ("cite it in your
+    next SOW to close the loop") and wrote a valid, gate-verified resolved_by back.
+    resolved_by is the STRONGER signal (verified against ground; answered_by only checks
+    a ruling names the file) so it must win when both are present."""
+    root = _sows_repo(tmp_path)
+    d = root / "ducktyper" / "sow" / "s1"
+    d.mkdir(parents=True)
+    (d / "s1-SOW-01-x.md").write_text(
+        "---\nsow: s1\nn: 1\nschema_rev: 16\nstatus: RULING-REQUESTED\n"
+        'resolved_by: "ruling: RULING-001"\n'
+        "project: ducktyper\ncreated: 2026-07-01\nupdated: 2026-07-01\n---\n\nb\n",
+        encoding="utf-8",
+    )
+    rulings = root / "ducktyper" / "ruling"
+    rulings.mkdir(parents=True)
+    (rulings / "RULING-001-x.md").write_text(
+        "---\nruling: 001\nstatus: ACTIVE\nlanding_commit: self\n"
+        "requested_by: ducktyper/sow/s1/s1-SOW-01-x.md\n---\n\nb\n",
+        encoding="utf-8",
+    )
+    rc = cli.main(["--inbox", "s1", str(root)])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "0 truly open · 0 answered-by-ruling · 1 resolved · 0 by-supersession" in out
+    assert "ANSWERED-BY-RULING (cite it in your next SOW to close the loop):\n  (none)" in out
+    assert "RESOLVED (closed by implementation/doctrine, verified resolver — not awaiting anything):\n  SOW-1" in out
+
+
 def test_board_echoes_the_table_not_just_a_digest(tmp_path, capsys):
     """SOW-12 sE.1: the operator saw a one-line count and concluded emptiness."""
     root = _sows_repo(tmp_path)

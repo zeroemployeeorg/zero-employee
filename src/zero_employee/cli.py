@@ -169,9 +169,18 @@ def _inbox(root, stream) -> int:
     # THREE closure states (doctrine): a SOW leaves OPEN if a ruling answered it (answered)
     # OR a verified resolved_by closed it (resolved). Supersession is the one self-serving
     # resolver - its own section for sampled human audit (Sparring addition 2, binding).
-    ans = [r for r in aw if r.get("answered")]
+    #
+    # PRECEDENCE FIX (paid 2026-08-16, editorial-recon SOW-1 / RULING-067): `resolved` and
+    # `superseded` both correctly excluded `answered`, but `ans` did not exclude `resolved` -
+    # so once a ruling's requested_by cited a SOW, that row was PERMANENTLY stuck at
+    # "answered-by-ruling" even after the stream did exactly what the message told it to
+    # ("cite it in your next SOW to close the loop") and wrote a valid, gate-verified
+    # resolved_by back. The receipt could never be seen. `resolved_by` is the STRONGER
+    # signal (check_resolved_by verifies it against ground; answered_by only checks a
+    # ruling's requested_by names the file) so it must win when both are present.
+    resolved = [r for r in aw if r.get("resolved") and not r.get("supersession")]
+    ans = [r for r in aw if r.get("answered") and not r.get("resolved")]
     superseded = [r for r in aw if r.get("supersession") and not r.get("answered")]
-    resolved = [r for r in aw if r.get("resolved") and not r.get("supersession") and not r.get("answered")]
     openq = [r for r in aw if not r.get("answered") and not r.get("resolved")]
     # COVERAGE (doctrine / Sparring s2): the inbox must DECLARE its blind spot. A
     # confident "0 open" that actually means "I can't parse this stream" is the false-ANSWERED
