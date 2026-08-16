@@ -2103,21 +2103,35 @@ def check_ruling_corpus(files_fm) -> dict:
     # reproduces ZERO false positives against that same corpus (MEASURED), and still
     # catches the shape that provoked doctrine in the first place: doctrine/215, both
     # declaring scope: org, the one namespace doctrine kept flat and un-reusable.
+    # TOMBSTONE-AWARE (paid live, profrodai/org 2026-08-16): a VOIDED or SUPERSEDED file
+    # is not claiming its integer - it is the doctrine-mandated record of a collision
+    # ALREADY CAUGHT AND CORRECTED (append-don't-revert: the misfiled ruling's bytes stay,
+    # a dated tombstone section names the successor, "do not cite this file"). The prior
+    # unscoped check could not tell that apart from a live, unresolved collision, so a
+    # tombstone that DOCUMENTS its own resolution failed the gate FOREVER - every session,
+    # every Claude, no way to clear it short of deleting doctrine-mandated history. Two
+    # ACTIVE (or AMENDED) files sharing an integer is still a real, live collision and
+    # still errors; a VOIDED/SUPERSEDED file sharing an integer with a live one is the
+    # normal, expected shape of a caught-and-corrected mistake and is silent.
+    _NOT_LIVE = {"VOIDED", "SUPERSEDED"}
     seen = defaultdict(list)
     for path, fm in files_fm:
         m = _RULING_NAME_RE.match(pathlib.Path(path).name)
         if m and str(fm.get("scope", "")).strip().lower() == "org":
-            seen[m.group(1)].append(path)
+            status = str(fm.get("status", "")).strip().upper()
+            live = status not in _NOT_LIVE
+            seen[m.group(1)].append((path, live))
     out = {}
-    for nnn, paths in seen.items():
-        if len(paths) > 1:
-            names = sorted(pathlib.Path(p).name for p in paths)
-            for p in paths:
+    for nnn, entries in seen.items():
+        live_paths = [p for p, live in entries if live]
+        if len(live_paths) > 1:
+            names = sorted(pathlib.Path(p).name for p in live_paths)
+            for p in live_paths:
                 out.setdefault(p, []).append(
                     Finding(
                         ERROR,
                         "ruling-collision",
-                        f"RULING-{nnn} claimed by {len(names)} ORG-SCOPE files: {names} - "
+                        f"RULING-{nnn} claimed by {len(names)} LIVE ORG-SCOPE files: {names} - "
                         "org-scope draws from one flat counter (doctrine)",
                     )
                 )
