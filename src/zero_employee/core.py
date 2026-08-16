@@ -2614,6 +2614,47 @@ _NAV_LINE = (
 )
 
 
+_REV_LETTER_RE = re.compile(r"^[a-zA-Z]+$")
+_ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}")
+
+
+def _rev_rank(rev):
+    """Orderable (kind, value) rank for a rev: field, or None if unorderable.
+
+    This corpus uses BOTH conventions for rev: -- numeric chains (rev: 1, 2, 3 ...,
+    parsed by YAML as int or a digit string) and letter chains (rev: a, b, c ... z,
+    then aa, ab, ac ... -- confirmed live on disk, e.g. archaeology streams). Neither
+    shape may be hardcoded as the only orderable one; both are handled generically
+    here (letters via a base-26 rank so multi-letter revs order past z correctly).
+    Anything else (a bare word, a trailing comment, a compound id) is left
+    unorderable -- the caller falls back to a date signal rather than guessing.
+    """
+    if isinstance(rev, bool):
+        return None
+    if isinstance(rev, int):
+        return ("int", rev)
+    if isinstance(rev, str):
+        s = rev.strip()
+        if not s:
+            return None
+        if s.isdigit():
+            return ("int", int(s))
+        if _REV_LETTER_RE.match(s):
+            rank = 0
+            for ch in s.lower():
+                rank = rank * 26 + (ord(ch) - ord("a") + 1)
+            return ("alpha", rank)
+    return None
+
+
+def _orderable_date(entry):
+    for field in ("updated", "created"):
+        v = entry.get(field)
+        if isinstance(v, str) and _ISO_DATE_RE.match(v.strip()):
+            return v.strip()
+    return None
+
+
 def latest_rev_of(entries):
     # Binding 4 (CONSERVATIVE RENDER): a stream whose revs are not all integer-
     # identified cannot be ordered, so it renders UNKNOWN rather than a confident
@@ -2628,7 +2669,29 @@ def latest_rev_of(entries):
     numbered = [e for e in entries if isinstance(e.get("n"), int)]
     if not numbered:
         return None
-    return max(numbered, key=lambda e: e["n"])
+    max_n = max(e["n"] for e in numbered)
+    tied = [e for e in numbered if e["n"] == max_n]
+    if len(tied) == 1:
+        return tied[0]
+    # Binding 5 (TIE-BREAK BY REV, THEN DATE): a chain can legitimately mint n:
+    # once and encode true revision order in rev: a/b/c...z instead -- max()-on-n
+    # alone then ties every entry and silently returns whichever one the caller's
+    # file-scan happened to build first, which is NOT true rev order. Proven live:
+    # editorial-recon (27 files, every one n: 1, rev: a..z) rendered its rev-k
+    # snapshot on the board instead of the true tail, rev-z. Prefer rev: (numeric
+    # or letter, whichever this chain uses) when ALL tied entries carry a mutually
+    # orderable one; else prefer updated:/created: date when ALL tied entries carry
+    # one; only if NOTHING orderable distinguishes the tie do we fall back to the
+    # prior (file-scan-order) behavior -- same conservative-fail-closed spirit as
+    # Binding 4, scoped to the tie rather than the whole stream.
+    ranked = [(_rev_rank(e.get("rev")), e) for e in tied]
+    kinds = {rank[0] for rank, _ in ranked if rank is not None}
+    if len(kinds) == 1 and all(rank is not None for rank, _ in ranked):
+        return max(ranked, key=lambda pair: pair[0])[1]
+    dated = [(_orderable_date(e), e) for e in tied]
+    if all(date is not None for date, _ in dated):
+        return max(dated, key=lambda pair: pair[0])[1]
+    return tied[0]
 
 
 _RESTING = {

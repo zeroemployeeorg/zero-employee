@@ -31,6 +31,67 @@ def test_latest_rev_unknown_only_when_nothing_orderable():
     assert latest_rev_of([{"n": None}, {"n": None}]) is None
 
 
+def test_latest_rev_breaks_n_tie_by_letter_rev():
+    # THE BUG (editorial-recon, live on disk): a chain that mints n: once and
+    # encodes true order via rev: a, b, c ... z ties every entry on n, so a bare
+    # max()-on-n silently returns whichever entry the caller built first -- not
+    # the true tail. 27 real files reproduced this exactly (all n: 1, rev: a..z);
+    # the board rendered the rev-k snapshot instead of rev-z. This test uses the
+    # SAME shape, deliberately built with the true-latest entry FIRST in the list
+    # so a first-wins fallback (the pre-fix behavior) would fail it.
+    entries = [
+        {"n": 1, "rev": "k", "updated": "2026-07-11"},
+        {"n": 1, "rev": "a", "updated": "2026-07-01"},
+        {"n": 1, "rev": "z", "updated": "2026-08-16"},
+        {"n": 1, "rev": "b", "updated": "2026-07-02"},
+    ]
+    top = latest_rev_of(entries)
+    assert top["rev"] == "z"
+    assert top["updated"] == "2026-08-16"
+
+
+def test_latest_rev_breaks_n_tie_by_multiletter_rev():
+    # rev chains that run past z (aa, ab, ac ...) are live on disk too -- the
+    # tiebreak must rank multi-letter revs correctly, not just single letters.
+    entries = [
+        {"n": 1, "rev": "z", "updated": "2026-01-01"},
+        {"n": 1, "rev": "aa", "updated": "2026-01-02"},
+        {"n": 1, "rev": "ac", "updated": "2026-01-04"},
+        {"n": 1, "rev": "ab", "updated": "2026-01-03"},
+    ]
+    assert latest_rev_of(entries)["rev"] == "ac"
+
+
+def test_latest_rev_breaks_n_tie_by_numeric_rev():
+    # some chains use rev: 1, 2, 3 ... instead of letters -- numeric rev must be
+    # ranked as a number, not lexically ("10" before "9" would be wrong).
+    entries = [
+        {"n": 1, "rev": 2, "updated": "2026-01-01"},
+        {"n": 1, "rev": 10, "updated": "2026-01-02"},
+        {"n": 1, "rev": 9, "updated": "2026-01-03"},
+    ]
+    assert latest_rev_of(entries)["rev"] == 10
+
+
+def test_latest_rev_falls_back_to_date_when_rev_unorderable():
+    # a rev value that isn't a clean int or letter run (a bare word, a compound
+    # id) can't be ranked -- fall back to updated:/created: date rather than
+    # guessing at an ordering the field doesn't actually encode.
+    entries = [
+        {"n": 1, "rev": "charter", "updated": "2026-01-01"},
+        {"n": 1, "rev": "charter-7", "updated": "2026-03-01"},
+        {"n": 1, "rev": "pm1", "updated": "2026-02-01"},
+    ]
+    assert latest_rev_of(entries)["updated"] == "2026-03-01"
+
+
+def test_latest_rev_ties_truly_indistinguishable_keep_first():
+    # nothing orderable at all (no rev, no date) -- the prior file-scan-order
+    # behavior is preserved as the last resort, not a crash or a new guess.
+    entries = [{"n": 1, "first": True}, {"n": 1, "first": False}]
+    assert latest_rev_of(entries)["first"] is True
+
+
 def test_a_later_sow_does_NOT_close_a_ruling_request():
     # THE RULE: only a RULING closes a request. Excluding on "a later SOW exists"
     # hid docs-sort SOW-63/66 behind SOW-67 — the exact failure this detects.
