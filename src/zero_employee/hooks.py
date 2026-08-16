@@ -113,6 +113,21 @@ def unstage_generated_boards(corpus_root: pathlib.Path | str) -> list[str]:
             continue
         if not staged.stdout.strip():
             continue
+        # A staged DELETION of a board file is the untracking act, not an
+        # attempt to commit board content - let it through. Paid live in
+        # zeroemployeeorg/org 2026-08-16: both boards were listed in
+        # .gitignore AND tracked (gitignore has no effect on tracked files),
+        # so they sat permanently dirty and every commit of them was empty.
+        # The fix is `git rm --cached`, and this function unstaged that
+        # deletion too - so the hook blocked its own intended end state and
+        # the cleanup could only land with --no-verify.
+        status = subprocess.run(
+            ["git", "-C", str(corpus_root), "diff", "--cached", "--name-status", "--", name],
+            capture_output=True,
+            text=True,
+        )
+        if status.stdout.strip().startswith("D"):
+            continue
         # Prefer restore --staged (works before first commit); fall back to reset.
         r = subprocess.run(
             ["git", "-C", str(corpus_root), "restore", "--staged", "--", name],

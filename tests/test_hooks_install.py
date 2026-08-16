@@ -353,3 +353,49 @@ def test_append_cost_log_and_cli(tmp_path, capsys):
     )
     assert rc == 0
     assert len(log.read_text(encoding="utf-8").splitlines()) == 2
+
+
+def test_unstage_generated_boards_lets_a_deletion_through(tmp_path):
+    """Paid live in zeroemployeeorg/org (2026-08-16): STATE.md and stream-index.md were
+    BOTH listed in .gitignore ('zeo generated boards - do not commit') AND tracked by
+    git. .gitignore has no effect on already-tracked files, so they sat permanently
+    dirty in every seat's working tree, and every attempt to commit them produced an
+    EMPTY commit because this function unstaged them first. STATE.md's last real
+    content commit was a week stale while the on-disk board showed today - which reads
+    as lost work to anyone comparing the two.
+
+    The fix is `git rm --cached`, i.e. a staged DELETION. But this function unstaged
+    that too, so the hook blocked its own intended end state and the cleanup could
+    only land with --no-verify. A deletion is the untracking act, not an attempt to
+    commit board content: it must pass through."""
+    from zero_employee.hooks import unstage_generated_boards
+
+    root = _corpus(tmp_path)
+    board = root / "STATE.md"
+    board.write_text("# board\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(root), "add", "STATE.md"], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(root), "commit", "-m", "track board"], check=True, capture_output=True)
+
+    # Staged CONTENT change: still unstaged (the original, still-wanted behaviour).
+    board.write_text("# board changed\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(root), "add", "STATE.md"], check=True, capture_output=True)
+    assert "STATE.md" in unstage_generated_boards(root)
+    staged_now = subprocess.run(
+        ["git", "-C", str(root), "diff", "--cached", "--name-only"],
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert "STATE.md" not in staged_now, "a staged content change must still be unstaged"
+
+    # Staged DELETION (`git rm --cached`): must survive, or untracking is impossible.
+    subprocess.run(["git", "-C", str(root), "rm", "--cached", "STATE.md"], check=True, capture_output=True)
+    unstage_generated_boards(root)
+    still_staged = subprocess.run(
+        ["git", "-C", str(root), "diff", "--cached", "--name-status"],
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert still_staged.strip().startswith("D"), (
+        "a staged deletion is the untracking act and must pass through the hook"
+    )
+    assert board.is_file(), "git rm --cached must leave the file on disk"
