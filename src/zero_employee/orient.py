@@ -219,9 +219,7 @@ def build_work_summary(root: pathlib.Path) -> WorkSummary:
 
 
 def _hooks_installed(root: pathlib.Path) -> bool:
-    return (root / "tools" / "hooks" / "pre-commit").is_file() or (
-        root / ".git" / "hooks" / "pre-commit"
-    ).is_file()
+    return (root / "tools" / "hooks" / "pre-commit").is_file() or (root / ".git" / "hooks" / "pre-commit").is_file()
 
 
 def _governance(root: pathlib.Path, ref: dict) -> GovernanceInfo:
@@ -865,11 +863,7 @@ def build_next_action(
     if ctx and ctx.kind == "stream" and ctx.stream:
         detail = build_stream_detail(root, ctx.stream)
         files_fm = _load_files_fm(root)
-        aw = [
-            r
-            for r in awaiting_ruling(files_fm, root=root)
-            if str(r["stream"]).lower() == ctx.stream.lower()
-        ]
+        aw = [r for r in awaiting_ruling(files_fm, root=root) if str(r["stream"]).lower() == ctx.stream.lower()]
         openq = [r for r in aw if not r.get("answered") and not r.get("resolved")]
         status = _status_base(str(detail.get("latest", {}).get("status") or ctx.status or ""))
         if status in _BLOCKED or openq:
@@ -1032,8 +1026,8 @@ NEW_CHOICES = [
         "key": "sow",
         "label": "Work whose scope and destination are already known",
         "artifact": "SOW",
-        "command": "zeo sow new <project> <stream> --title \"...\"",
-        "command_json": "zeo sow new <project> <stream> --title \"...\" --json",
+        "command": 'zeo sow new <project> <stream> --title "..."',
+        "command_json": 'zeo sow new <project> <stream> --title "..." --json',
     },
     {
         "id": 3,

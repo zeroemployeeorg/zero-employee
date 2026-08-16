@@ -46,11 +46,7 @@ def ensure_board_gitignore(corpus_root: pathlib.Path | str) -> bool:
     corpus_root = pathlib.Path(corpus_root).resolve()
     path = corpus_root / ".gitignore"
     existing = path.read_text(encoding="utf-8") if path.is_file() else ""
-    have = {
-        ln.strip()
-        for ln in existing.splitlines()
-        if ln.strip() and not ln.strip().startswith("#")
-    }
+    have = {ln.strip() for ln in existing.splitlines() if ln.strip() and not ln.strip().startswith("#")}
     missing = [name for name in GENERATED_BOARD_FILES if name not in have]
     cache_missing = [name for name in ZEO_LOCAL_CACHE_ENTRIES if name not in have]
     if not missing and not cache_missing:
@@ -97,8 +93,7 @@ def warn_tracked_boards(corpus_root: pathlib.Path | str) -> list[str]:
     if tracked:
         joined = " ".join(tracked)
         print(
-            f"NOTE: {joined} still tracked by git. For zero-friction boards:\n"
-            f"  git rm --cached {' '.join(tracked)}",
+            f"NOTE: {joined} still tracked by git. For zero-friction boards:\n  git rm --cached {' '.join(tracked)}",
             file=sys.stderr,
         )
     return tracked
@@ -188,8 +183,7 @@ def run_pre_commit(corpus_root: pathlib.Path | str | None = None) -> int:
     unstaged = unstage_generated_boards(root)
     if unstaged:
         print(
-            f"zeo: unstaged generated board file(s) (local views, not committed): "
-            f"{', '.join(unstaged)}",
+            f"zeo: unstaged generated board file(s) (local views, not committed): {', '.join(unstaged)}",
             file=sys.stderr,
         )
 
@@ -305,15 +299,10 @@ def run_stop(corpus_root: pathlib.Path | str | None = None, stdin_text: str | No
             capture_output=True,
             text=True,
         )
-        hits = [
-            ln
-            for ln in st.stdout.splitlines()
-            if _SOW_RULING_STAGED_RE.search(ln)
-        ]
+        hits = [ln for ln in st.stdout.splitlines() if _SOW_RULING_STAGED_RE.search(ln)]
         if hits:
             print(
-                f"ZEO: {len(hits)} SOW/ruling file(s) UNCOMMITTED. "
-                "Your context dies here; the chain is what survives.",
+                f"ZEO: {len(hits)} SOW/ruling file(s) UNCOMMITTED. Your context dies here; the chain is what survives.",
                 file=sys.stderr,
             )
             for ln in hits[:5]:
@@ -337,14 +326,7 @@ def run_pretooluse_git(stdin_text: str | None = None) -> int:
         ).stdout.splitlines()
     except Exception:
         staged = []
-    streams = sorted(
-        {
-            m.group(0)
-            for line in staged
-            for m in [re.search(r"(^|/)sow/[^/]+/", line)]
-            if m
-        }
-    )
+    streams = sorted({m.group(0) for line in staged for m in [re.search(r"(^|/)sow/[^/]+/", line)] if m})
     if len(streams) > 1:
         print(f"WARNING: staged set spans {len(streams)} stream directories.", file=sys.stderr)
         for line in staged[:8]:

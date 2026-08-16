@@ -7,7 +7,13 @@ import json
 import pathlib
 
 from zero_employee import cli
-from zero_employee.core import extract_frontmatter, intake_open_rows, lint_file, parse_current_rev, find_canonical_claude_md
+from zero_employee.core import (
+    extract_frontmatter,
+    intake_open_rows,
+    lint_file,
+    parse_current_rev,
+    find_canonical_claude_md,
+)
 from zero_employee.intake_authoring import (
     create_intake,
     create_intake_from_spec,

@@ -358,13 +358,9 @@ def create_intake(
     if done_when is not None:
         sections["DONE WHEN"] = done_when
     if not_this is not None:
-        sections["NOT THIS"] = (
-            "\n".join(not_this) if isinstance(not_this, list) else str(not_this)
-        )
+        sections["NOT THIS"] = "\n".join(not_this) if isinstance(not_this, list) else str(not_this)
     if context is not None:
-        sections["CONTEXT"] = (
-            "\n".join(context) if isinstance(context, list) else str(context)
-        )
+        sections["CONTEXT"] = "\n".join(context) if isinstance(context, list) else str(context)
 
     what_text = (sections.get("WHAT") or "").strip()
     if not what_text and title:
@@ -1146,14 +1142,10 @@ def promote_intake(
 
     n = allocate_n(root, dest_stream)
     if proposal is not None:
-        sow_body = build_sow_body_from_proposal(
-            title=dest_title, n=n, intake_rel=intake_rel, proposal=proposal
-        )
+        sow_body = build_sow_body_from_proposal(title=dest_title, n=n, intake_rel=intake_rel, proposal=proposal)
         done_when = _done_when_text(proposal.implementation)
     else:
-        sow_body = build_ungrounded_sow_body(
-            title=dest_title, n=n, intake_rel=intake_rel, sections=sections
-        )
+        sow_body = build_ungrounded_sow_body(title=dest_title, n=n, intake_rel=intake_rel, sections=sections)
         done_when = sections.get("DONE WHEN") or "Clear acceptance criteria established"
 
     result, err = create_sow(
@@ -1214,11 +1206,7 @@ def ensure_zeo_gitignore(corpus_root: pathlib.Path) -> bool:
     corpus_root = pathlib.Path(corpus_root).resolve()
     path = corpus_root / ".gitignore"
     existing = path.read_text(encoding="utf-8") if path.is_file() else ""
-    have = {
-        ln.strip()
-        for ln in existing.splitlines()
-        if ln.strip() and not ln.strip().startswith("#")
-    }
+    have = {ln.strip() for ln in existing.splitlines() if ln.strip() and not ln.strip().startswith("#")}
     entries = [".zeo/"]
     missing = [e for e in entries if e not in have]
     if not missing:

@@ -181,7 +181,7 @@ def init_corpus(root: pathlib.Path | str, tools: Iterable[str] | None = None) ->
         intake_readme.write_text(
             "# Intake\n\n"
             "Frictionless capture of operator intent before project/stream identity is known.\n\n"
-            "Create with `zeo intake new` / `zeo intake \"...\"`.\n"
+            'Create with `zeo intake new` / `zeo intake "..."`.\n'
             "Promote grounded implementation work with "
             "`zeo intake mission` → `zeo intake propose` → `zeo intake promote`.\n\n"
             "Statuses: OPEN | PROMOTED | DUPLICATE | REJECTED | PARKED.\n",
