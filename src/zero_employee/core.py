@@ -367,6 +367,29 @@ def check_corpus(files_fm, root=None) -> dict:
     group as one flat-legacy set = the prior behavior, preserved."""
     out = defaultdict(list)
     numbered = []  # (project, n, path, rev, status)
+    files_fm = list(files_fm)
+    # RECONCILED-BY-SUCCESSOR (doctrine: SOWs are append-only, a colliding file is
+    # NEVER edited or status-flipped after the fact to silence a real n-collision -
+    # see coverage-90 SOW-10/SOW-10, reconciled forward by SOW-11's own supersedes:10
+    # + prose naming both filenames, rather than by touching either SOW-10 file).
+    # A later, LIVE SOW in the same project whose own `supersedes:` names a colliding
+    # `n` is exactly that reconciliation, already on record in the corpus - the
+    # checker should recognize it as resolved (WARN, visible, non-blocking) instead
+    # of demanding a status edit doctrine forbids. Keyed on (project, n) only: the
+    # successor's OWN n/rev is irrelevant, only which n it claims to supersede.
+    reconciled_ns = set()
+    for path, fm in files_fm:
+        succ_status = str(fm.get("status", "")).strip().upper()
+        if succ_status in _NOT_LIVE_SOW:
+            continue
+        supersedes = fm.get("supersedes")
+        if supersedes is None:
+            continue
+        try:
+            proj = project_of(path, root)
+            reconciled_ns.add((proj, int(supersedes)))
+        except (TypeError, ValueError):
+            continue
     for path, fm in files_fm:
         n = fm.get("n")
         if n is None:
@@ -401,6 +424,26 @@ def check_corpus(files_fm, root=None) -> dict:
                 rpaths = [p for p, st in rentries if st not in _NOT_LIVE_SOW]
                 if len(rpaths) > 1:
                     dup = ", ".join(sorted(pathlib.Path(x).name for x in rpaths))
+                    if (proj, n) in reconciled_ns:
+                        # RECONCILED BY A SUCCESSOR (see reconciled_ns above): a later
+                        # live SOW's own `supersedes:` already names this n - the
+                        # collision is a recorded, resolved fact, not an unaddressed
+                        # one. WARN (visible, non-blocking) instead of ERROR
+                        # (commit-blocking) - append-only doctrine forbids editing
+                        # either colliding file's own status to silence this.
+                        for p in rpaths:
+                            out[p].append(
+                                Finding(
+                                    WARN,
+                                    "n-collision-reconciled",
+                                    f"n:{n} rev:{rev} used by {len(rpaths)} SOWs in stream "
+                                    f"'{stream}' of project '{proj}' (duplicate): {dup} - "
+                                    f"reconciled by a later SOW's own supersedes:{n} "
+                                    f"(append-only doctrine: neither file is edited to "
+                                    f"silence this, see the successor SOW for the ruling)",
+                                )
+                            )
+                        continue
                     for p in rpaths:
                         out[p].append(
                             Finding(

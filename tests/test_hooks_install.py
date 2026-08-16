@@ -178,6 +178,59 @@ def test_pre_commit_catches_a_sow_n_collision_with_an_already_committed_sow(tmp_
     assert rc == 1, "an n-collision with an already-committed SOW must block the commit"
 
 
+def test_pre_commit_allows_a_collision_reconciled_by_a_later_supersedes(tmp_path):
+    """Paid live in zeroemployeeorg/org (quackverse-coverage-90 SOW-10/SOW-10, 2026-08-16):
+    two SOWs independently minted the same (n, rev) - a real collision - and a prior
+    Master reconciled it forward by minting the NEXT sow (n+1, `supersedes: <the
+    colliding n>`) naming both filenames in its own prose, rather than editing either
+    colliding file's own status. That is correct per this corpus's own append-only-SOW
+    doctrine (a colliding file is never rewritten after the fact to silence the
+    collision it was part of) - but the commit-check-corpus gate did not know a later
+    file's `supersedes:` could resolve an EARLIER n-collision, and blocked every future
+    unrelated commit to the whole corpus forever, with no doctrine-legal way through.
+    Fixed: a live SOW whose own `supersedes:` names a colliding n reconciles it -
+    WARN (visible), not ERROR (commit-blocking). Neither colliding file is touched."""
+    root = _corpus(tmp_path)
+    (root / "claude-md" / "CLAUDE.md").write_text(
+        "# CLAUDE.md\n<!-- DOC-DATE: 2026-08-16 (Rev 17) -->\n", encoding="utf-8"
+    )
+    subprocess.run(["git", "-C", str(root), "add", "claude-md"], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(root), "commit", "-m", "init"], check=True, capture_output=True)
+
+    sow_dir = root / "projects" / "demo" / "sow" / "teststream"
+    sow_dir.mkdir(parents=True)
+    frontmatter = (
+        "---\nsow: teststream\nproject: demo\nn: 10\nrev: 9\nschema_rev: 17\n"
+        "created: 2026-08-16\nupdated: 2026-08-16\nstatus: RULING-REQUESTED\n"
+        "lifecycle: ESCALATION\nissue_first: true\nledger: []\n---\n\nbody\n"
+    )
+    first = sow_dir / "TESTSTREAM-SOW-10-first.md"
+    first.write_text(frontmatter, encoding="utf-8")
+    second = sow_dir / "TESTSTREAM-SOW-10-second.md"
+    second.write_text(frontmatter.replace("body", "body 2"), encoding="utf-8")
+    subprocess.run(
+        ["git", "-C", str(root), "add", str(first), str(second)], check=True, capture_output=True
+    )
+    subprocess.run(["git", "-C", str(root), "commit", "-m", "both n:10"], check=True, capture_output=True)
+
+    # The successor: n:11, supersedes:10, still RULING-REQUESTED originals untouched.
+    successor_fm = (
+        "---\nsow: teststream\nproject: demo\nn: 11\nrev: 10\nsupersedes: 10\n"
+        "schema_rev: 17\ncreated: 2026-08-16\nupdated: 2026-08-16\nstatus: HANDOVER\n"
+        "lifecycle: RESTING\nissue_first: true\nledger: []\n---\n\n"
+        "supersedes both TESTSTREAM-SOW-10-first.md and TESTSTREAM-SOW-10-second.md\n"
+    )
+    successor = sow_dir / "TESTSTREAM-SOW-11-reconciled.md"
+    successor.write_text(successor_fm, encoding="utf-8")
+    subprocess.run(["git", "-C", str(root), "add", str(successor)], check=True, capture_output=True)
+
+    rc = run_pre_commit(root)
+    assert rc == 0, "a collision already reconciled by a later supersedes: must not block"
+    # and neither original file was touched to get there
+    assert first.read_text(encoding="utf-8") == frontmatter
+    assert second.read_text(encoding="utf-8") == frontmatter.replace("body", "body 2")
+
+
 def test_pre_commit_allows_a_legitimate_rev_chain_no_collision(tmp_path):
     """The fix must not blind the gate the other way: two files sharing n but with
     DIFFERENT rev values are a legitimate rev-chain (doctrine B), not a collision, and
