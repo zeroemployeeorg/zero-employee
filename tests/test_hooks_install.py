@@ -208,9 +208,7 @@ def test_pre_commit_allows_a_collision_reconciled_by_a_later_supersedes(tmp_path
     first.write_text(frontmatter, encoding="utf-8")
     second = sow_dir / "TESTSTREAM-SOW-10-second.md"
     second.write_text(frontmatter.replace("body", "body 2"), encoding="utf-8")
-    subprocess.run(
-        ["git", "-C", str(root), "add", str(first), str(second)], check=True, capture_output=True
-    )
+    subprocess.run(["git", "-C", str(root), "add", str(first), str(second)], check=True, capture_output=True)
     subprocess.run(["git", "-C", str(root), "commit", "-m", "both n:10"], check=True, capture_output=True)
 
     # The successor: n:11, supersedes:10, still RULING-REQUESTED originals untouched.
