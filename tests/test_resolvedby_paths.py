@@ -56,6 +56,25 @@ def test_a_GENUINELY_absent_ruling_still_FAILS_closed(tmp_path):
     assert ok is False and "no such ruling" in detail
 
 
+def test_a_REAL_ruling_with_trailing_prose_still_resolves_and_says_so(tmp_path):
+    """worldprops-SOW-24, 2026-08-17: `ruling: RULING-272 (backfilled ...)` globbed for a
+    literal file named "RULING-272 (backfilled..." and reported "no such ruling on disk"
+    for a ruling that WAS on disk — a false detail message, not just a missed match."""
+    _mk(tmp_path, "projects/ducktyper/ruling/RULING-272-skyline-float.md")
+    _, _, ok, detail = check_resolved_by(
+        {"resolved_by": "ruling: RULING-272 (backfilled 2026-08-17 by Master)"}, tmp_path
+    )
+    assert ok is True
+    assert "no such ruling" not in detail
+    assert "trailing text after the number ignored" in detail
+
+
+def test_a_ruling_target_with_no_leading_number_FAILS_closed_with_a_distinct_reason(tmp_path):
+    _mk(tmp_path, "ruling/RULING-001-x.md")
+    _, _, ok, detail = check_resolved_by({"resolved_by": "ruling: see the discussion"}, tmp_path)
+    assert ok is False and "no leading number" in detail
+
+
 def test_no_resolved_by_returns_all_None(tmp_path):
     assert check_resolved_by({}, tmp_path) == (None, None, None, None)
 

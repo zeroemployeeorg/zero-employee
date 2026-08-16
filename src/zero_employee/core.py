@@ -3853,18 +3853,40 @@ def check_resolved_by(fm, root, ruling_stems=None):
         # fail-closed verdict - the worst shape a gate can take. Org-scope rulings at
         # root ruling/ were never findable at all. Third instance of this family after
         # project_of and find_sow_roots.
-        stem = target if target.startswith("RULING-") else "RULING-" + target
+        #
+        # MEASURED (worldprops-SOW-24, 2026-08-17): a well-formed target with trailing
+        # prose - `ruling: RULING-272 (backfilled 2026-08-17 by Master ...)` - globbed for
+        # a literal file named "RULING-272 (backfilled..." and found nothing, so a REAL,
+        # ON-DISK ruling reported `ok=False, detail="no such ruling on disk"` — a message
+        # that is simply false (the ruling exists) and indistinguishable from a genuinely
+        # absent one. The author has no way to tell "you typed the wrong number" from
+        # "your formatting broke the match" without reading this function's source. Fix:
+        # extract the leading integer explicitly and match on THAT, but keep the two
+        # failure shapes distinguishable in `detail` rather than silently tolerating
+        # decoration — an author writing "ruling: 272 see also 273" should be told their
+        # target was ambiguous, not have it quietly resolved to the first number found.
+        m = re.match(r"^(?:RULING-)?(\d+)\s*(.*)$", target)
+        if m is None:
+            return ("ruling", target, False, "resolved_by ruling target has no leading number")
+        num, trailing = m.group(1), m.group(2).strip()
+        stem = "RULING-" + num
         homes = [
             root / "ruling",
             *root.glob("projects/*/ruling"),
             *root.glob("*/ruling"),
         ]
         hits = [f for h in homes if h.is_dir() for f in h.glob(stem + "-*.md")]
+        if not hits:
+            detail = "no such ruling on disk"
+        elif trailing:
+            detail = f"ruling file present (trailing text after the number ignored: {trailing!r})"
+        else:
+            detail = "ruling file present"
         return (
             "ruling",
             target,
             bool(hits),
-            "ruling file present" if hits else "no such ruling on disk",
+            detail,
         )
     if kind == "rev":
         # N <= current canonical Rev
