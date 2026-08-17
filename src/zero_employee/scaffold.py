@@ -7,6 +7,9 @@ Self-contained: does not touch doctrine --resync-* machinery or product seats
 from __future__ import annotations
 
 import difflib
+import hashlib
+import json
+import os
 import pathlib
 import re
 from collections.abc import Iterable
@@ -40,6 +43,107 @@ def _templates_dir() -> pathlib.Path:
 def _read_template(*parts: str) -> str:
     path = _templates_dir().joinpath(*parts)
     return path.read_text(encoding="utf-8")
+
+
+# REPO-EQUIP-SOW-7 (step 3 of REPO-EQUIP-SOW-1): 4-level content precedence for
+# `zeo equip`. Level 1 (repo's own existing file) is handled entirely by
+# equip_repo()'s never-clobber branch and never reaches this function -- this
+# resolves content ONLY for a file that is actually about to be WRITTEN.
+_PER_USER_TEMPLATES_SUBDIR = (".config", "zeo", "templates")
+
+
+def _per_user_templates_dir() -> pathlib.Path:
+    return pathlib.Path.home().joinpath(*_PER_USER_TEMPLATES_SUBDIR)
+
+
+def resolve_template_content(*parts: str) -> tuple[str, str]:
+    """Resolve a template's content through the 4-level precedence chain (levels 2-4).
+
+    Level 1 ("repo's own file, already present") is never-clobber and is decided by
+    the caller before this is reached -- this function only answers "what content
+    should be WRITTEN", checking in order:
+      2. $ZEO_TEMPLATES_DIR/<relative-path>  (env var, explicit)
+      3. ~/.config/zeo/templates/<relative-path>  (per-user)
+      4. packaged scaffold_templates/<relative-path>  (shipped default)
+    First match wins. Returns (content, source) where source is one of
+    "env", "user", "package" -- for callers/tests that want to assert which
+    level actually fired.
+    """
+    rel = pathlib.PurePath(*parts)
+
+    env_dir = os.environ.get("ZEO_TEMPLATES_DIR")
+    if env_dir:
+        candidate = pathlib.Path(env_dir).joinpath(rel)
+        if candidate.is_file():
+            return candidate.read_text(encoding="utf-8"), "env"
+
+    user_candidate = _per_user_templates_dir().joinpath(rel)
+    if user_candidate.is_file():
+        return user_candidate.read_text(encoding="utf-8"), "user"
+
+    return _read_template(*parts), "package"
+
+
+def _stamp_content(rel_path: str, content: str) -> str:
+    """Insert an UPSTREAM-SHA line, hashing `content` exactly as resolved (pre-stamp).
+
+    Hash scope matches core.py's `resync_apply` convention exactly (core.py:1028-1029):
+    sha256 of the raw resolved source text, computed BEFORE any banner/stamp is added --
+    never a hash of the final stamped file (that would be circular). This is also why an
+    override's stamp differs from the package default's stamp for the same file: they
+    hash different `content`, not the same bytes.
+
+    Comment syntax matches `_UPSTREAM_SHA_RE` (core.py:769: `#`, `//`, `/* */`,
+    `<!-- -->`, or bare) and is picked per file type:
+      - `.sh`               -> `# UPSTREAM-SHA: ...` as line 2, after the shebang.
+      - `.md` w/ frontmatter -> `<!-- UPSTREAM-SHA: ... -->` right after the closing `---`.
+      - `.md` w/o frontmatter -> `<!-- UPSTREAM-SHA: ... -->` at the very top.
+      - `.json`              -> a top-level `"_upstreamSha"` string key carrying the
+        marker text (`"_upstreamSha": "UPSTREAM-SHA: <hex>"`). JSON has no comment
+        syntax at all, and `.claude/settings.json` is parsed as strict JSON by Claude
+        Code itself (confirmed: no JSONC/comment tolerance -- a `#`/`//`/`/* */` line
+        would break the live settings file), so this is the only shape that keeps the
+        file valid JSON.
+
+        KNOWN, NAMED GAP (not fixed here -- out of scope, see module docstring / SOW):
+        `_UPSTREAM_SHA_RE` (core.py:769) is anchored at line-start with `re.M`, allowing
+        only a `#`/`//`/`/* */`/`<!--`/bare prefix before `UPSTREAM-SHA:`. Because JSON
+        always renders a value as `"key": "..."`,
+        the marker text can never itself BEGIN a physical line while staying valid JSON
+        (the leading `"key": "` always precedes it on the same line) -- so this stamp is
+        real, greppable by a human (`grep UPSTREAM-SHA`), and hashed with the same
+        pre-stamp-content scope as every other file, but is NOT currently discoverable
+        by `_UPSTREAM_SHA_RE.search()` the way the `.sh`/`.md` stamps are. Fixing that
+        needs either a regex change or a settings.json-specific reader in `core.py`,
+        which is step 4's territory (`.claude/` visibility to `--resync-check`), not
+        this SOW's. Recorded here rather than silently glossed over.
+      - anything else        -> `# UPSTREAM-SHA: ...` at the top (default fallback).
+    """
+    sha = hashlib.sha256(content.encode("utf-8")).hexdigest()
+    marker = f"UPSTREAM-SHA: {sha}"
+
+    if rel_path.endswith(".sh"):
+        lines = content.splitlines(keepends=True)
+        if lines and lines[0].startswith("#!"):
+            return lines[0] + f"# {marker}\n" + "".join(lines[1:])
+        return f"# {marker}\n" + content
+
+    if rel_path.endswith(".json"):
+        data = json.loads(content) if content.strip() else {}
+        data["_upstreamSha"] = marker
+        return json.dumps(data, indent=2) + "\n"
+
+    if rel_path.endswith(".md"):
+        banner = f"<!-- {marker} -->\n"
+        if content.startswith("---"):
+            try:
+                end = content.index("\n---", 3) + 4
+                return content[:end] + "\n" + banner + content[end:].lstrip("\n")
+            except ValueError:
+                pass
+        return banner + content
+
+    return f"# {marker}\n" + content
 
 
 def normalize_tools(tools: Iterable[str] | None) -> set[str]:
@@ -192,9 +296,20 @@ def equip_repo(
     REPO-EQUIP-SOW-5 (step 2 of REPO-EQUIP-SOW-1's charter): `.claude/settings.json`,
     `.claude/hooks/check-trunk-guard.sh`, `CLAUDE.md`, `.claude/agents/zeo-{master,stream,sparring}.md`.
 
-    Never clobbers an existing file by default (reported as "kept"). `force=True`
-    overwrites. `diff=True` writes nothing and instead reports a unified diff (or
-    "would create" for a new file) for every target.
+    Never clobbers an existing file by default (reported as "kept") -- level 1 of
+    REPO-EQUIP-SOW-7's precedence chain; a kept file is never read FROM, only checked
+    for presence. For a file that IS being written, content is resolved through the
+    4-level precedence chain (REPO-EQUIP-SOW-7, step 3 of the charter):
+    `$ZEO_TEMPLATES_DIR/...` > `~/.config/zeo/templates/...` > packaged
+    `scaffold_templates/...`, via `resolve_template_content()`. Every written file is
+    then stamped with `# UPSTREAM-SHA: <sha256 of the resolved content>` (comment
+    syntax per file type, see `_stamp_content()`) -- hashing the content actually
+    chosen, so a deliberate override's stamp never reads as stale against a default
+    it isn't using.
+
+    `force=True` overwrites. `diff=True` writes nothing and instead reports a unified
+    diff (or "would create" for a new file) for every target, against the same
+    resolved+stamped content that would actually be written.
 
     Reuses the same never-clobber shape `install_bridges()` already established for
     the `--claude` bridge flag (`_write_if_absent`) rather than a second copy
@@ -205,13 +320,20 @@ def equip_repo(
 
     for rel_path, template_parts, executable in _EQUIP_ALWAYS_FILES:
         dest = root / rel_path
-        content = _read_template(*template_parts)
         existed = dest.exists()
 
+        if diff and not existed:
+            actions.append({"path": rel_path, "action": "would-create", "diff": None})
+            continue
+
+        if existed and not force and not diff:
+            actions.append({"path": rel_path, "action": "kept"})
+            continue
+
+        resolved, source = resolve_template_content(*template_parts)
+        content = _stamp_content(rel_path, resolved)
+
         if diff:
-            if not existed:
-                actions.append({"path": rel_path, "action": "would-create", "diff": None})
-                continue
             current = dest.read_text(encoding="utf-8")
             if current == content:
                 actions.append({"path": rel_path, "action": "unchanged", "diff": None})
@@ -227,15 +349,11 @@ def equip_repo(
             actions.append({"path": rel_path, "action": "would-change", "diff": udiff})
             continue
 
-        if existed and not force:
-            actions.append({"path": rel_path, "action": "kept"})
-            continue
-
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(content, encoding="utf-8")
         if executable:
             dest.chmod(dest.stat().st_mode | 0o111)
-        actions.append({"path": rel_path, "action": "overwritten" if existed else "written"})
+        actions.append({"path": rel_path, "action": "overwritten" if existed else "written", "source": source})
 
     return {"root": str(root), "diff": diff, "force": force, "actions": actions}
 

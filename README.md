@@ -223,6 +223,50 @@ Supported bridge flags: `--cursor`, `--gemini`, `--claude`, `--agents`, `--all`.
 
 ---
 
+## `zeo equip` — overriding the shipped templates
+
+`zeo equip <repo>` installs the ALWAYS-tier `.claude/` + `CLAUDE.md` files (see
+[Command Reference](#command-reference)) into a work repo. `zero-employee` is
+MIT-licensed and distributed on PyPI, so any file it writes can be adapted to your
+own org's needs **without forking the package** — a forked template silently opts
+you out of every future improvement, which is worse than the drift it was meant to
+avoid.
+
+For each file `zeo equip` is about to **write** (never for a file the repo already
+has — see "never clobbers" below), it resolves the content to use through a 4-level
+precedence chain, first match wins:
+
+1. **The repo's own file, if it already exists.** Reported `kept`, never touched,
+   never read from as a content source. This is `zeo equip`'s "never clobber by
+   default" guarantee (`--force` overwrites; `--diff` previews without writing) — it
+   is not itself an override *source*, just the reason overrides never apply to a
+   file you've already customized in place.
+2. **`$ZEO_TEMPLATES_DIR`** — an environment variable pointing at a directory shaped
+   like `scaffold_templates/` (e.g. `$ZEO_TEMPLATES_DIR/CLAUDE.md`,
+   `$ZEO_TEMPLATES_DIR/claude-settings.json`). Explicit and highest-precedence among
+   the override levels — set it in CI or a wrapper script to pin a specific org-wide
+   template set.
+3. **`~/.config/zeo/templates/`** — the same directory shape, per-user, for a
+   developer's own standing preferences without needing an env var in every shell.
+4. **The packaged default** (`zero_employee/scaffold_templates/`) — what ships in
+   the wheel, used when neither override level has the file.
+
+Every file `zeo equip` actually **writes** (from any of levels 2–4) is stamped with
+an `UPSTREAM-SHA: <sha256 hex>` line (`#`-, `//`-, or `<!-- -->`-commented, matching
+the file's own syntax), hashing the **content that was actually written** — an
+override's own bytes, not the packaged default's. This is deliberate: once a future
+`zeo --resync-check` gains visibility into `.claude/`, a template you've
+*deliberately* overridden must grade as current against itself, not show up as
+permanently "stale" against a packaged default you already chose not to use.
+
+`.claude/settings.json` is the one exception to the comment-syntax list above: it is
+strict JSON, live-loaded by Claude Code itself, which has no tolerance for `//` or
+`/* */` comments. Its stamp lives in a top-level `"_upstreamSha"` string field
+instead — real, hashed the same way, greppable — but not yet machine-discoverable by
+the shared `UPSTREAM-SHA:` regex the way the other files' stamps are.
+
+---
+
 ## Local Development & Testing
 
 We use `uv` and `make` for deterministic, hermetic local builds:

@@ -24,7 +24,7 @@ import subprocess
 
 import pytest
 
-from zero_employee.scaffold import equip_repo
+from zero_employee.scaffold import _stamp_content, equip_repo
 
 _ALWAYS_PATHS = (
     ".claude/settings.json",
@@ -49,6 +49,14 @@ def _template_text(rel_path: str) -> str:
         ".claude/agents/zeo-sparring.md": _TEMPLATES_ROOT / "agents" / "zeo-sparring.md",
     }
     return mapping[rel_path].read_text(encoding="utf-8")
+
+
+def _stamped_template_text(rel_path: str) -> str:
+    """The real shipped template content, stamped the same way `equip_repo()` stamps it
+    when writing from the packaged default (REPO-EQUIP-SOW-7, step 3) -- what a fresh
+    write actually produces on disk today, as opposed to the bare unstamped template.
+    """
+    return _stamp_content(rel_path, _template_text(rel_path))
 
 
 def _git(repo: pathlib.Path, *args: str) -> subprocess.CompletedProcess:
@@ -91,7 +99,9 @@ def test_equip_fresh_repo_writes_every_file_with_real_content(work_repo):
     for rel in _ALWAYS_PATHS:
         dest = work_repo / rel
         assert dest.is_file(), f"{rel} was not written"
-        assert dest.read_text(encoding="utf-8") == _template_text(rel), f"{rel} content does not match shipped template"
+        assert dest.read_text(encoding="utf-8") == _stamped_template_text(rel), (
+            f"{rel} content does not match the stamped shipped template"
+        )
 
     # Sanity: content is real, not stub-shaped.
     settings_text = (work_repo / ".claude" / "settings.json").read_text(encoding="utf-8")
@@ -143,8 +153,8 @@ def test_equip_force_overwrites_existing_file(work_repo):
     actions = {a["path"]: a["action"] for a in info["actions"]}
     assert actions[".claude/settings.json"] == "overwritten"
 
-    # The load-bearing assertion: read the file back, now matches the template.
-    assert custom_settings.read_text(encoding="utf-8") == _template_text(".claude/settings.json")
+    # The load-bearing assertion: read the file back, now matches the stamped template.
+    assert custom_settings.read_text(encoding="utf-8") == _stamped_template_text(".claude/settings.json")
     assert custom_settings.read_text(encoding="utf-8") != custom_content
 
 
@@ -218,7 +228,7 @@ def test_equip_force_preserves_executable_bit_on_overwrite(work_repo):
     equip_repo(work_repo, force=True)
 
     assert guard.stat().st_mode & 0o111, "force-overwrite must (re)install the hook executable"
-    assert guard.read_text(encoding="utf-8") == _template_text(".claude/hooks/check-trunk-guard.sh")
+    assert guard.read_text(encoding="utf-8") == _stamped_template_text(".claude/hooks/check-trunk-guard.sh")
 
 
 # ---------------------------------------------------------------------------
