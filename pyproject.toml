@@ -1,6 +1,6 @@
 [project]
 name = "zero-employee"
-version = "0.2.0"
+version = "0.3.0"
 description = "Open-source tools and infrastructure for building Zero Employee Organizations powered by AI agents."
 readme = "README.md"
 requires-python = ">=3.11"

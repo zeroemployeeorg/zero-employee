@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.3.0] - 2026-08-17
+
+### Added
+- **Fifth genre: `design` (RULING-286):** A real, graded document shape for weighing 2+
+  approaches with stated evidence and tradeoffs before committing to a direction — sitting
+  between `intake` (operator-only, no evidence required) and `charter` (already-decided,
+  binds work). Wired into the real `discriminate()`/`lint_file()` dispatch alongside
+  `charter`/`intake`/`learnings`, never falling through to the genre-unknown SKIP path or
+  silently inheriting SOW grading rules. Requires an id, `status:` in
+  `OPEN|DECIDED|SUPERSEDED`, a `QUESTION:` section, **2 or more `APPROACHES:` entries**
+  (fewer than two fails — that is a decision already made, not a comparison), and a
+  mandatory `NOT DECIDING HERE:` section (present even when empty, mirroring `intake`'s own
+  `NOT THIS:` scope-fence discipline). `DECIDED`/`SUPERSEDED` status requires
+  `decided_into:` naming the charter or ruling it became. Closes the same way `intake`
+  closes: a Master's `requested_by:` citation on the successor charter/ruling is the
+  receipt, no separate acknowledgment field.
+- New authoring skill: `authoring/design-authoring-SKILL.md` — when to use the genre (and,
+  as importantly, when not to: an obvious call still just becomes a charter directly), the
+  form, and its closure mechanic.
+
 ## [0.1.7] - 2026-08-10
 
 ### Added
