@@ -355,6 +355,176 @@ def test_append_cost_log_and_cli(tmp_path, capsys):
     assert len(log.read_text(encoding="utf-8").splitlines()) == 2
 
 
+def _governance_repo(tmp_path, monkeypatch):
+    """A plain (non-corpus) work repo -- RULING-277's incident happened inside
+    ordinary work repos (quackverse/ducktyper), not the org sows corpus, so
+    this fixture deliberately does NOT build a claude-md/CLAUDE.md corpus
+    marker the way `_corpus()` does."""
+    root = tmp_path / "work-repo"
+    root.mkdir()
+    subprocess.run(["git", "init"], cwd=root, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(root), "config", "user.email", "seat@example.com"], check=True, capture_output=True
+    )
+    subprocess.run(["git", "-C", str(root), "config", "user.name", "seat"], check=True, capture_output=True)
+    (root / "README.md").write_text("# repo\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(root), "add", "README.md"], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(root), "commit", "-m", "init"], check=True, capture_output=True)
+    monkeypatch.chdir(root)
+    return root
+
+
+def _stage(root, relpath, content="x\n"):
+    p = root / relpath
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(content, encoding="utf-8")
+    subprocess.run(["git", "-C", str(root), "add", relpath], check=True, capture_output=True)
+
+
+def _payload(command, session_id="sess-1"):
+    return json.dumps({"session_id": session_id, "tool_input": {"command": command}})
+
+
+def test_pretooluse_git_allows_source_only_commit(tmp_path, monkeypatch, capsys):
+    root = _governance_repo(tmp_path, monkeypatch)
+    _stage(root, "src/foo.py", "print(1)\n")
+    rc = run_pretooluse_git(stdin_text=_payload('git commit -m "add foo" -- src/foo.py'))
+    assert rc == 0
+    err = capsys.readouterr().err
+    assert "WARN" not in err
+    assert "ESCALATE" not in err
+
+
+def test_pretooluse_git_allows_governance_path_with_sow_citation(tmp_path, monkeypatch, capsys):
+    root = _governance_repo(tmp_path, monkeypatch)
+    _stage(root, ".claude/settings.json", "{}\n")
+    rc = run_pretooluse_git(
+        stdin_text=_payload('git commit -m "fix(claude): settings per REPO-EQUIP-SOW-2" -- .claude/settings.json')
+    )
+    assert rc == 0
+    err = capsys.readouterr().err
+    assert "WARN" not in err
+    assert "ESCALATE" not in err
+
+
+def test_pretooluse_git_allows_governance_path_with_sow_path_citation(tmp_path, monkeypatch, capsys):
+    root = _governance_repo(tmp_path, monkeypatch)
+    _stage(root, "CLAUDE.md", "# doc\n")
+    rc = run_pretooluse_git(
+        stdin_text=_payload('git commit -m "docs: update CLAUDE.md, see sow/repo-equip/foo.md" -- CLAUDE.md')
+    )
+    assert rc == 0
+    err = capsys.readouterr().err
+    assert "WARN" not in err
+
+
+def test_pretooluse_git_warns_on_uncited_settings_json_ruling_277_regression(tmp_path, monkeypatch, capsys):
+    """Direct regression for RULING-277 s0: the real incident commit touched
+    exactly .claude/settings.json, message 'chore(claude): standardize
+    .claude/settings.json across the three seat repos', no SOW filed, landed
+    straight to trunk in two verified repos. This reproduces that exact shape
+    and must now WARN."""
+    root = _governance_repo(tmp_path, monkeypatch)
+    _stage(root, ".claude/settings.json", "{}\n")
+    rc = run_pretooluse_git(
+        stdin_text=_payload(
+            'git commit -m "chore(claude): standardize .claude/settings.json across the three seat repos" '
+            "-- .claude/settings.json"
+        )
+    )
+    assert rc == 0  # WARN only, never blocks
+    err = capsys.readouterr().err
+    assert "WARN [RULING-277]" in err
+    assert ".claude/settings.json" in err
+
+
+def test_pretooluse_git_warns_on_uncited_claude_md(tmp_path, monkeypatch, capsys):
+    root = _governance_repo(tmp_path, monkeypatch)
+    _stage(root, "CLAUDE.md", "# doc change\n")
+    rc = run_pretooluse_git(stdin_text=_payload('git commit -m "docs: tweak CLAUDE.md" -- CLAUDE.md'))
+    assert rc == 0
+    err = capsys.readouterr().err
+    assert "WARN [RULING-277]" in err
+    assert "CLAUDE.md" in err
+
+
+def test_pretooluse_git_warns_on_uncited_tools_hooks(tmp_path, monkeypatch, capsys):
+    root = _governance_repo(tmp_path, monkeypatch)
+    _stage(root, "tools/hooks/pre-commit", "#!/bin/sh\n")
+    rc = run_pretooluse_git(stdin_text=_payload('git commit -m "fix hook" -- tools/hooks/pre-commit'))
+    assert rc == 0
+    err = capsys.readouterr().err
+    assert "WARN [RULING-277]" in err
+    assert "tools/hooks/pre-commit" in err
+
+
+def test_pretooluse_git_warns_on_mixed_governance_and_source_paths(tmp_path, monkeypatch, capsys):
+    """A commit spanning BOTH a governance path and an ordinary source file must
+    still warn -- the mix does not exempt it (done_when item 3, explicit)."""
+    root = _governance_repo(tmp_path, monkeypatch)
+    _stage(root, ".claude/settings.json", "{}\n")
+    _stage(root, "src/foo.py", "print(1)\n")
+    rc = run_pretooluse_git(stdin_text=_payload('git commit -m "mixed change" -- .claude/settings.json src/foo.py'))
+    assert rc == 0
+    err = capsys.readouterr().err
+    assert "WARN [RULING-277]" in err
+    assert ".claude/settings.json" in err
+
+
+def test_pretooluse_git_escalates_on_third_uncited_commit_same_author_same_session(tmp_path, monkeypatch, capsys):
+    root = _governance_repo(tmp_path, monkeypatch)
+    session = "sess-escalate"
+    for i in range(2):
+        _stage(root, ".claude/settings.json", f"{{'n': {i}}}\n")
+        rc = run_pretooluse_git(
+            stdin_text=_payload('git commit -m "tweak settings" -- .claude/settings.json', session_id=session)
+        )
+        assert rc == 0
+        err = capsys.readouterr().err
+        assert "WARN [RULING-277]" in err
+        assert "ESCALATE" not in err, f"must not escalate before the 3rd warning (warning #{i + 1})"
+
+    _stage(root, ".claude/settings.json", "{'n': 2}\n")
+    rc = run_pretooluse_git(
+        stdin_text=_payload('git commit -m "tweak settings again" -- .claude/settings.json', session_id=session)
+    )
+    assert rc == 0
+    err = capsys.readouterr().err
+    assert "WARN [RULING-277]" in err
+    assert "ESCALATE [RULING-277]" in err
+    assert "RULING-277" in err
+
+
+def test_pretooluse_git_escalation_counter_is_scoped_per_session(tmp_path, monkeypatch, capsys):
+    """A DIFFERENT session_id must not inherit another session's warn count --
+    keying by session_id is the whole point of the chosen persistence mechanism
+    (SOW-2 s2): a new Claude Code session starts at zero."""
+    root = _governance_repo(tmp_path, monkeypatch)
+    for i in range(3):
+        _stage(root, ".claude/settings.json", f"{{'n': {i}}}\n")
+        run_pretooluse_git(
+            stdin_text=_payload('git commit -m "tweak settings" -- .claude/settings.json', session_id="sess-A")
+        )
+        capsys.readouterr()
+
+    _stage(root, "CLAUDE.md", "# change\n")
+    rc = run_pretooluse_git(stdin_text=_payload('git commit -m "docs tweak" -- CLAUDE.md', session_id="sess-B"))
+    assert rc == 0
+    err = capsys.readouterr().err
+    assert "WARN [RULING-277]" in err
+    assert "ESCALATE" not in err, "a fresh session_id must not carry over sess-A's warn count"
+
+
+def test_pretooluse_git_bypass_command_still_short_circuits(tmp_path, monkeypatch, capsys):
+    """Pre-existing behavior (not touched by this change): a non-git-commit/push
+    tool call is a fast no-op."""
+    root = _governance_repo(tmp_path, monkeypatch)
+    rc = run_pretooluse_git(stdin_text='{"tool_input":{"command":"ls"}}')
+    assert rc == 0
+    err = capsys.readouterr().err
+    assert err == ""
+
+
 def test_unstage_generated_boards_lets_a_deletion_through(tmp_path):
     """Paid live in zeroemployeeorg/org (2026-08-16): STATE.md and stream-index.md were
     BOTH listed in .gitignore ('zeo generated boards - do not commit') AND tracked by

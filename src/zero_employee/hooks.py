@@ -26,6 +26,28 @@ _TEMPLATE_NAMES = (
 
 _SOW_RULING_STAGED_RE = re.compile(r"(^|/)(sow|ruling)/.*\.md$")
 
+# RULING-277: governance-class paths, hardcoded per the ruling's own scope boundary
+# (no per-repo-declared list -- that is an explicitly OPEN cosign question, not
+# settled by this build). Sized to the incident (RULING-277 s0: the offending
+# commits touched exactly .claude/settings.json) plus the "natural adjacent set"
+# RULING-277 s2/s4 names by INFERENCE, not independent observation this session:
+# CLAUDE.md and tools/hooks/** were not seen drifting themselves, they were reasoned
+# to be exactly as dangerous to hand-copy as the settings file that invokes them.
+_GOVERNANCE_PATH_RE = re.compile(r"(^|/)(\.claude/.+|CLAUDE\.md|tools/hooks/.+)$")
+
+# A SOW-shaped citation in a commit message: a path under sow/, or a bare
+# "SOW-NN" token, or a "<stream>#<n>" token (RULING-277's own named citation shape,
+# echoed verbatim in REPO-EQUIP-SOW-2 done_when item 1).
+_SOW_CITATION_RE = re.compile(
+    r"(^|[\s(])sow/[^\s)]+"  # a sow/ path
+    r"|\bSOW-\d+\b"  # bare SOW-NN
+    r"|\b[A-Za-z][A-Za-z0-9_-]*#\d+\b",  # <stream>#<n>
+    re.IGNORECASE,
+)
+
+_GOVERNANCE_WARN_STATE_FILE = "zeo-governance-warns.json"
+_ESCALATE_AT = 3
+
 
 def _templates_dir() -> pathlib.Path:
     # Package data: zero_employee/hooks_templates/
@@ -333,10 +355,147 @@ def run_stop(corpus_root: pathlib.Path | str | None = None, stdin_text: str | No
     return 0
 
 
+def _extract_tool_command(raw: str) -> str:
+    """Best-effort pull of tool_input.command from a PreToolUse JSON payload.
+
+    Falls back to the raw text itself (matches this hook's pre-existing
+    convention of substring-matching "git commit"/"git push" directly on
+    stdin, for callers that pass a bare command string instead of full JSON --
+    see run_pretooluse_git's own docstring history and its tests).
+    """
+    try:
+        data = json.loads(raw or "{}")
+        if isinstance(data, dict):
+            cmd = data.get("tool_input", {}).get("command")
+            if isinstance(cmd, str) and cmd:
+                return cmd
+    except Exception:
+        pass
+    return raw
+
+
+def _extract_commit_message(command: str) -> str:
+    """Pull the intended commit message out of a pending `git commit` command.
+
+    The PreToolUse hook fires BEFORE the tool runs, so there is no committed
+    message to read from git yet -- only the proposed command line. Handles
+    repeated -m (git concatenates them with blank lines) and -F/--file=.
+    Best-effort: a message zeo can't parse is treated as uncited, which is the
+    fail-safe direction for a WARN-only advisory.
+    """
+    msgs = []
+    for m in re.finditer(r"(?:^|\s)(?:-m|--message)(?:=|\s+)(\"([^\"]*)\"|'([^']*)'|(\S+))", command):
+        msgs.append(m.group(2) or m.group(3) or m.group(4) or "")
+    for m in re.finditer(r"(?:^|\s)(?:-F|--file)(?:=|\s+)(\S+)", command):
+        fpath = m.group(1).strip("\"'")
+        try:
+            msgs.append(pathlib.Path(fpath).read_text(encoding="utf-8", errors="replace"))
+        except Exception:
+            pass
+    return "\n".join(msgs)
+
+
+def _governance_paths_touched(staged: list[str]) -> list[str]:
+    return [line for line in staged if _GOVERNANCE_PATH_RE.search(line)]
+
+
+def _has_sow_citation(message: str) -> bool:
+    return bool(_SOW_CITATION_RE.search(message or ""))
+
+
+def _git_dir(cwd: pathlib.Path | None = None) -> pathlib.Path | None:
+    """Resolve the real .git dir (worktree-safe) via git itself."""
+    try:
+        r = subprocess.run(
+            ["git", "rev-parse", "--git-common-dir"],
+            capture_output=True,
+            text=True,
+            cwd=str(cwd) if cwd else None,
+        )
+        if r.returncode != 0:
+            return None
+        p = pathlib.Path(r.stdout.strip())
+        if not p.is_absolute():
+            p = (pathlib.Path(cwd) if cwd else pathlib.Path.cwd()) / p
+        return p.resolve()
+    except Exception:
+        return None
+
+
+def _git_author(cwd: pathlib.Path | None = None) -> str:
+    try:
+        r = subprocess.run(
+            ["git", "config", "user.email"],
+            capture_output=True,
+            text=True,
+            cwd=str(cwd) if cwd else None,
+        )
+        email = r.stdout.strip()
+        if email:
+            return email
+    except Exception:
+        pass
+    try:
+        r = subprocess.run(
+            ["git", "config", "user.name"],
+            capture_output=True,
+            text=True,
+            cwd=str(cwd) if cwd else None,
+        )
+        return r.stdout.strip() or "unknown"
+    except Exception:
+        return "unknown"
+
+
+def _bump_governance_warn_count(git_dir: pathlib.Path | None, session_id: str, author: str) -> int:
+    """Persist + increment the uncited-governance-path-commit count.
+
+    RULING-277 s3's escalation ("three unSOWed governance-path commits from the
+    same author within one session") needs SOME memory across otherwise-stateless
+    PreToolUse invocations (SOW s2's own named gap). Chosen mechanism: a small
+    JSON state file at <git-dir>/zeo-governance-warns.json, keyed by the real
+    Claude Code `session_id` field (confirmed present on every PreToolUse
+    payload per Claude Code's own hook docs -- session_id is a COMMON field,
+    not PreToolUse-specific, so it needs no derivation from transcript_path the
+    way run_stop's cost logic does). This is deliberately NOT the flat
+    never-resets counter the SOW's s2 named as "probably wrong" (a long-lived
+    repo would escalate once and never again), and NOT a git-log-window
+    heuristic (which would redefine "session" as "recent history" and could
+    over/under-fire relative to what RULING-277 s3 actually asked for). Keying
+    by session_id means a new Claude Code session starts this count at zero
+    automatically -- the file can grow unboundedly across many sessions over
+    time, but each entry is tiny (author -> int) and this is advisory state,
+    not doctrine; pruning is a future cheap follow-up, not a correctness gap.
+    Fails open (returns 1, i.e. "treat as first warning") if the state file
+    can't be read or written, matching this hook's overall fail-open contract.
+    """
+    if not git_dir or not session_id:
+        return 1
+    state_path = git_dir / _GOVERNANCE_WARN_STATE_FILE
+    try:
+        data = json.loads(state_path.read_text(encoding="utf-8")) if state_path.is_file() else {}
+        if not isinstance(data, dict):
+            data = {}
+    except Exception:
+        data = {}
+    session_bucket = data.get(session_id)
+    if not isinstance(session_bucket, dict):
+        session_bucket = {}
+    count = int(session_bucket.get(author, 0)) + 1
+    session_bucket[author] = count
+    data[session_id] = session_bucket
+    try:
+        state_path.write_text(json.dumps(data), encoding="utf-8")
+    except Exception:
+        pass
+    return count
+
+
 def run_pretooluse_git(stdin_text: str | None = None) -> int:
     """Fail-open PreToolUse advisory before git commit/push."""
     raw = stdin_text if stdin_text is not None else (sys.stdin.read() if not sys.stdin.isatty() else "")
-    if "git commit" not in raw and "git push" not in raw:
+    command = _extract_tool_command(raw)
+    if "git commit" not in command and "git push" not in command:
         return 0
     print("--- ZEO pre-git check ---", file=sys.stderr)
     try:
@@ -353,11 +512,50 @@ def run_pretooluse_git(stdin_text: str | None = None) -> int:
         for line in staged[:8]:
             print(line, file=sys.stderr)
         print('Commit BY EXPLICIT PATHSPEC: git commit -m "..." -- <path>', file=sys.stderr)
-    if "git commit" in raw and " -- " not in raw:
+    if "git commit" in command and " -- " not in command:
         print(
             "WARNING: no explicit pathspec (-- <path>). A bare commit ships the whole index.",
             file=sys.stderr,
         )
+
+    # RULING-277: governance-class path gate. WARN only -- never block. See
+    # REPO-EQUIP-SOW-2 done_when items 1-2. Only meaningful on an actual commit
+    # (a `git push` has nothing new staged and no pending commit message to
+    # check citation against).
+    if "git commit" in command:
+        gov_hits = _governance_paths_touched(staged)
+        if gov_hits:
+            message = _extract_commit_message(command)
+            if not _has_sow_citation(message):
+                print(
+                    "WARN [RULING-277]: this commit touches governance-class path(s) with "
+                    "no SOW-shaped citation (a sow/ path, 'SOW-NN', or '<stream>#<n>') in "
+                    "the commit message:",
+                    file=sys.stderr,
+                )
+                for hit in gov_hits:
+                    print(f"  {hit}", file=sys.stderr)
+                print(
+                    "Governance-class config (.claude/**, CLAUDE.md, tools/hooks/**) hand-copied "
+                    "across repos with no SOW filed is the exact RULING-277 s0 incident shape. "
+                    "If this is a real fix, cite the SOW in the commit message; if there is none "
+                    "yet, file one first.",
+                    file=sys.stderr,
+                )
+                try:
+                    data = json.loads(raw or "{}")
+                    session_id = str(data.get("session_id") or "") if isinstance(data, dict) else ""
+                except Exception:
+                    session_id = ""
+                author = _git_author()
+                count = _bump_governance_warn_count(_git_dir(), session_id, author)
+                if count >= _ESCALATE_AT:
+                    print(
+                        f"ESCALATE [RULING-277]: uncited governance-path commit #{count} by "
+                        f"{author} in this session (threshold: {_ESCALATE_AT}). STOP and file a "
+                        "SOW before continuing -- do not keep committing past this warning.",
+                        file=sys.stderr,
+                    )
     return 0
 
 
