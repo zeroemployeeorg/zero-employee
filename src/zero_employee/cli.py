@@ -576,9 +576,9 @@ def _commit_check_corpus(root) -> int:
     # staged file at a time (--commit-check) or was gated to run only when a RULING
     # was among the staged files (this function, historically). A staged SOW that
     # collides with an already-committed SOW's n/rev was invisible to every commit,
-    # forever - proven live: MOTION-ELEMENTS-SOW-1 (profrodai/org) and
-    # quackverse-coverage-90 SOW-10 (zeroemployeeorg/org) both landed this way and sat
-    # undetected until a full corpus `zeo .` scan happened to be run by hand. Fixed by
+    # forever - proven live: two real SOWs in two different corpora both landed this
+    # way and sat undetected until a full corpus `zeo .` scan happened to be run by
+    # hand. Fixed by
     # extending this SAME once-per-commit corpus pass to the SOW namespace, not a
     # second bolt-on gate - one collision-detection pass, both namespaces.
     sow_files_fm = []

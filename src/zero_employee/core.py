@@ -351,7 +351,7 @@ def _stream_of(path, root=None):
 
 
 # TOMBSTONE-AWARE (same class as check_ruling_corpus's _NOT_LIVE, core.py:2116 - paid live
-# at profrodai/org 2026-08-16, one turn after the ruling fix): a VOIDED, SUPERSEDED, or
+# in a real corpus, one turn after the ruling fix): a VOIDED, SUPERSEDED, or
 # STALE SOW sharing an n/rev with a live file is the normal, expected shape of a
 # caught-and-corrected duplicate-numbering mistake - not a live, unresolved collision. A
 # distinct constant from _NOT_LIVE: SOWs carry a third genuinely-dead status, STALE, that
@@ -2264,7 +2264,7 @@ def check_ruling_corpus(files_fm) -> dict:
     # reproduces ZERO false positives against that same corpus (MEASURED), and still
     # catches the shape that provoked doctrine in the first place: doctrine/215, both
     # declaring scope: org, the one namespace doctrine kept flat and un-reusable.
-    # TOMBSTONE-AWARE (paid live, profrodai/org 2026-08-16): a VOIDED or SUPERSEDED file
+    # TOMBSTONE-AWARE (paid live in a real corpus): a VOIDED or SUPERSEDED file
     # is not claiming its integer - it is the doctrine-mandated record of a collision
     # ALREADY CAUGHT AND CORRECTED (append-don't-revert: the misfiled ruling's bytes stay,
     # a dated tombstone section names the successor, "do not cite this file"). The prior

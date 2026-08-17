@@ -29,9 +29,48 @@
 - **Transactional Frontmatter Validation:** Rejects improper frontmatter in body content prior to file creation or modification, leaving zero partial artifacts on failure.
 
 
-## [Unreleased]
+## [0.2.0] - 2026-08-17
 
 ### Added
+- **Stream Priority (`zeo --priority [path]`):** Nutzwertanalyse (German
+  weighted-utility analysis) ranking of every `OPEN`/`PAUSED`/`BLOCKED`
+  stream, so a Master session has a stated, revisable reason for which
+  stream gets the next session's tokens instead of `--triage`'s age-only
+  order. Four criteria — Dringlichkeit (urgency), Impact (from rulings'
+  `binds:`), Restaufwand (remaining cost in tokens, denominator), Risiko —
+  scored in tokens throughout, never currency. Prints top-N funded streams
+  plus next-M Opportunitätskosten (opportunity-cost) near-misses with a
+  stated Nutzwert delta, so funding one stream is a visible decision not
+  to fund another this round, not a hidden one.
+- **Repo Equip (`zeo equip <repo> [--force|--diff]`):** Installs the
+  ALWAYS-tier `.claude/` governance files (`settings.json` with a full
+  deny list, a behavior-verified trunk-guard hook, `CLAUDE.md`, seat
+  agent definitions) plus `.claude/hooks/check-trunk-guard.sh` into a
+  work repo. Never clobbers an existing file by default (reported
+  `kept`); `--force` overwrites; `--diff` previews a unified diff and
+  writes nothing. Content resolves through a 4-level precedence chain
+  (`$ZEO_TEMPLATES_DIR` → `~/.config/zeo/templates/` → packaged
+  default), and every written file is stamped `UPSTREAM-SHA: <sha256>`
+  of the content actually written, so a deliberate user override reads
+  as current rather than perpetually stale.
+- **Governance-Path Gate:** `zeo hooks pretooluse-git` now WARNs (never
+  blocks) when a pending commit touches a governance-class path
+  (`.claude/**`, `CLAUDE.md`, `tools/hooks/**`) with no SOW-shaped
+  citation in the commit message — closing the gap where hand-copied
+  `.claude/` configs drifted across repos with zero record. Three
+  uncited warnings from one author in one session escalate, naming the
+  incident explicitly.
+- **Cold Start (`zeo cold-start <repo-path> [--sows-root PATH] [--project NAME]`):**
+  A bounded, mechanical Ist-Aufnahme (as-is survey) for a freshly-equipped
+  repo with no SOW/ruling history yet — identity, existing-gate presence,
+  docs surface, TODO/FIXME/issue scan, and secrets presence-only checks,
+  each item's evidence citing the exact command and its literal output.
+  Writes one `FINDING`/`RECON` SOW into the SOWS repo only — zero
+  commits, zero writes into the surveyed work repo.
+- **`open_questions:` schema field** (RULING-268): a stream's own list of
+  outstanding questions, each independently resolvable via `resolved_by:`
+  without forcing a whole-SOW status flip. `--triage`'s NEEDS MASTER
+  count and `--inbox`'s rollup both read this field directly.
 - **Intake capture + grounded promote:** `zeo intake new|open|doctor|context|mission|propose|promote`
   (and `zeo intake "title"`). Capture is frictionless; promotion requires evidence-backed
   proposals from a coding agent. ZEO validates receipts, allocates SOW identity, and writes
@@ -41,11 +80,28 @@
   runs an Ollama body-only peer loop. Agents supply semantic values; ZEO owns governance syntax.
 - Shared `sow_authoring` write substrate + `ollama_client`; scaffold/mint reuse the serializer.
 - `zeo init` scaffolds `intake/` and gitignores `.zeo/` proposal cache.
+- Tracked `.githooks/pre-commit` (format+lint, ~0.15s) and `.githooks/pre-push`
+  (full pytest suite) via `core.hooksPath`, plus CI extended beyond bare pytest.
 
 ### Changed
 - Canonical SOW filenames zero-pad `n` (`SOW-01`); `zeo scaffold` wraps `sow new`.
 - Intake status vocabulary: `OPEN|PROMOTED|DUPLICATE|REJECTED|PARKED` (legacy
   `CHARTERED|DECLINED|SUPERSEDED` accepted as aliases on read).
+- `nutzwertanalyse()`'s Impact criterion reads rulings' `binds:` field directly
+  (a structured list already ~6.7x the coverage of the original `<stream>#<n>`
+  citation-graph walk it replaced) and no longer adds a flat `issue_first`
+  bonus — measured at 99.7% of the corpus, contributing zero real
+  discrimination and diluting the one real, varied signal.
+- `model_rates.toml`'s `default_model` follows the current model catalog
+  (was pinned to an older generation while the table already carried
+  correct newer rates unused underneath it); three current model IDs added.
+- The packaged `.claude/settings.json` and trunk-guard hook templates are
+  the real, behaviorally-proven bytes (full deny list; hook resolves its
+  own repo from script location, not cwd; gates trunk landings rather
+  than forbidding them; exempts abort/continue/skip/quit) — no longer the
+  `{"permissions": {}}` stub. The wheel's `force-include` template list
+  (silently non-updating for new files) is removed; hatchling's own
+  default package walk already ships everything, guaranteed by a test.
 
 ### Fixed
 - **`--spec -|<path>` crashed with a raw traceback on malformed input** across all
@@ -63,6 +119,21 @@
   when its `status` field was stale but its actual open question was already
   resolved; now derived from the same already-correct open-question list
   `--triage` prints, not a separate raw status scan.
+- **A decorated `resolved_by:` target** (e.g. `"ruling: 272 (backfilled ...)"`)
+  **silently reported a real, landed ruling as absent** instead of resolving
+  it; the leading ruling number is now extracted before lookup.
+- **A `VOIDED`/`SUPERSEDED`/`STALE` SOW permanently blocked its own `n:` slot**
+  from ever being reused, and a `VOIDED`/`SUPERSEDED` ruling permanently
+  failed the ruling-collision gate; both now correctly exclude tombstoned
+  revisions. A later live SOW's own `supersedes:` also now reconciles an
+  earlier n-collision instead of leaving it standing.
+- SOW n-collision detection is wired into the real tracked pre-commit hook,
+  not just the standalone linter.
+- A staged **deletion** of a generated board file (`STATE.md`,
+  `stream-index.md`) is now let through by pre-commit as the intended
+  untracking act, rather than treated the same as an unwanted modification.
+- `latest_rev_of` now breaks a tie on shared `n` by revision letter then
+  date, rather than an unstable/arbitrary order.
 - Flaky `test_digest_matches_the_real_bash_script_on_the_same_commit_range`:
   the bash and Python digest header each stamp their own independent
   timestamp a subprocess apart, occasionally differing by a minute
@@ -72,6 +143,10 @@
 - `make setup`'s dev-dependency install was a silent no-op (`--python` +
   unknown-extra fallback never triggered under `uv`); now installs the
   `dev` dependency group explicitly.
+- `anthropic_count_tokens` (used by `--kosten`/`--repo-cost --count-via anthropic`)
+  now fails loudly with both remediation paths named when no credential is
+  found, instead of an opaque error; `--api-key-env <VARNAME>` lets a caller
+  whose credential lives under a non-default variable name use it.
 
 ## [0.1.4] - 2026-08-09
 
