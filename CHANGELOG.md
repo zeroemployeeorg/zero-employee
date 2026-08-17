@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.3.1] - 2026-08-17
+
+### Fixed
+- **`pyproject.toml` claimed `"Typing :: Typed"` in its PyPI classifiers, but
+  `src/zero_employee/py.typed` genuinely did not exist** — confirmed by `find` and by
+  building the wheel and checking its contents. Any downstream `mypy`/`pyright` user
+  silently got untyped stubs regardless of what the classifier claimed. Added the
+  marker file, verified it ships in a real build, added a regression test that fails
+  without the file and passes with it.
+
+### Added
+- **`SECURITY.md`, `CODE_OF_CONDUCT.md`:** standard OSS community-health files
+  (Contributor Covenant 2.1 for the latter) — previously absent.
+
+### Changed
+- **`README.md`:** real above-the-fold pitch, a live CI status badge, a table of
+  contents (every anchor checked against GitHub's actual heading-slug algorithm — three
+  were silently broken), and a corrected command table. Dropped a stale claim that
+  `sow-lint` is a "permanent alias" for `zeo` — it is not a registered script entry
+  point (`[project.scripts]` only declares `zeo`), confirmed by attempting to run it.
+- **`CONTRIBUTING.md`:** rewritten with a real local-setup walkthrough, the actual
+  tracked-hooks mechanism, test conventions, and a PR checklist, replacing an 11-line
+  stub.
+
 ## [0.3.0] - 2026-08-17
 
 ### Added

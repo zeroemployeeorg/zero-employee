@@ -1,3 +1,3 @@
 """zero-employee — portable SOW governance tooling (CLI: zeo; alias: zeo)."""
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"
