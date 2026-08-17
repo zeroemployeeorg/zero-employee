@@ -20,6 +20,13 @@ THE ZERO-GROWTH BAR IS YOURS. A fold enters CLAUDE.md only through the two doors
 paid failure, or 3+ diary entries from 2+ streams. REINFORCE-as-is is a real verdict and
 usually the right one.
 
+A FIFTH GENRE (`design`, RULING-286) was adopted - grader, skill doc, boot-doc pointers - on
+an explicit operator instruction to Master, WITHOUT your cosign first, because the ruling
+itself named adoption as needing your read and the operator's own instruction outranks that
+open flag. It stands as built. Read `RULING-286` and `authoring/design-authoring-SKILL.md`
+and say plainly if the shape should change - your review is owed after the fact here, not
+before.
+
 CO-SIGN OR WITHHOLD, IN WRITING, WITH THE GROUND. A verdict without its ground is an assertion
 the fleet obeys and cannot check. FILE IT - a co-sign given in chat is not a co-sign.
 

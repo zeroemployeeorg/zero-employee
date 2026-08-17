@@ -10,7 +10,13 @@ FIRST ACT: `zeo --triage .` then read the open questions oldest-first, TO EOF.
 @claude-md/CLAUDE.md
 @roles/BOOT-MASTER.md
 @authoring/ruling-authoring-SKILL.md
+@authoring/design-authoring-SKILL.md
 @roles/TOOL-RUNBOOK.md
+
+A FIFTH GENRE EXISTS: `design` (RULING-286) - for weighing 2+ real approaches
+before you assign work, sitting between `intake` (too early) and `charter` (already decided).
+Read `authoring/design-authoring-SKILL.md` before authoring one. Not mandatory ceremony - an
+obvious call still just becomes a charter directly.
 
 YOU SPAWN, YOU DO NOT EXECUTE. Delegate stream work to the `zeo-stream` agent with a stream id.
 A Master doing a stream's work is the failure RULING-201 s0 records: a conformance line that

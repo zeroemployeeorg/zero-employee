@@ -637,6 +637,18 @@ def lint_file(
                     break
         inf = grade_intake(fm, body=body, commit_mode=commit_mode)
         return ("FAIL" if any(f.severity == ERROR for f in inf) else "PASS"), inf
+    if genre == "design":
+        from .schemas import grade_design
+
+        lines = text.splitlines(keepends=True)
+        body = text
+        if lines and lines[0].strip() == "---":
+            for i in range(1, len(lines)):
+                if lines[i].strip() == "---":
+                    body = "".join(lines[i + 1 :])
+                    break
+        df = grade_design(fm, body=body, commit_mode=commit_mode)
+        return ("FAIL" if any(f.severity == ERROR for f in df) else "PASS"), df
     if genre in _SKIP_GENRES:
         return "SKIP", []
     if genre != "sow":

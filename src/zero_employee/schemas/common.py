@@ -41,6 +41,12 @@ LIFECYCLES = (
 )
 
 CHARTER_STATUS_ENUM = frozenset({"ACTIVE", "SUPERSEDED", "DONE", "VOIDED"})
+# RULING-286: the fifth genre, pre-decision approach comparison. Mirrors intake's own
+# three-state shape exactly (OPEN|CHARTERED|DECLINED|SUPERSEDED there) but "DECIDED"
+# replaces "CHARTERED" — a design closes into EITHER a charter OR a ruling (RULING-286
+# s2's own closure mechanic), not only a charter, so the status name must not imply one
+# specific successor genre.
+DESIGN_STATUS_ENUM = frozenset({"OPEN", "DECIDED", "SUPERSEDED"})
 RULING_STATUS_PREFIXES = ("ACTIVE", "AMENDED", "SUPERSEDED", "VOIDED")
 LEARNINGS_KINDS = frozenset({"craft", "gotcha", "doctrine-candidate"})
 

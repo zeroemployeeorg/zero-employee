@@ -37,6 +37,12 @@ A CHARTER ASSIGNS; ONLY A SOW MAKES YOUR STREAM VISIBLE. A stream dir holding a 
 filing is DARK to every inbox - measured at five such streams on 2026-08-16. If you are
 chartered, file a seed SOW before you do anything else.
 
+A FIFTH GENRE EXISTS: `design` (RULING-286) - for laying out 2+ real approaches with evidence
+BEFORE a direction is chosen. You MAY file one if you have a genuine, evidence-backed fork
+mid-recon. You do NOT close it - closing a design into a charter or ruling is Master's act,
+the same as you escalate a design fork via `status: RULING-REQUESTED` rather than ruling on it
+yourself. Read `authoring/design-authoring-SKILL.md` before authoring one.
+
 ## RUN BYPASSED - A TOOL PROMPT IS NOT AN ESCALATION
 
 Your session runs `--permission-mode bypassPermissions`. **The deny list in
