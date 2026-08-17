@@ -198,12 +198,24 @@ def test_digest_matches_the_real_bash_script_on_the_same_commit_range(two_author
     # Normalize both sides so INTAKE / successor / DARK / UNCOSIGNED headers equate.
     _ruling_cite = re.compile(r"RULING-\d+(?:\s+s[\d.]+)?(?:\s+item\s+\d+)?|doctrine(?:\s+item\s+\d+)?")
 
-    def _norm_ruling_cites(line: str) -> str:
+    # MEASURED (2026-08-17): the bash script and the Python port each stamp the
+    # header's "===== ZEO SESSION DIGEST · since ... · <timestamp> · <host> ====="
+    # line with their OWN independent `now()` call, one process apart. Near a
+    # minute boundary the two legitimately differ ("07:18" vs "07:19") even
+    # though the two runs cover the identical commit range and everything else
+    # is byte-identical - this is a genuine race in the test's own comparison
+    # method, not a bounding-logic difference between the two implementations.
+    # Normalize the timestamp out of the header the same way ruling citations
+    # are already normalized above, rather than asserting a coincidence.
+    _digest_header_ts = re.compile(r"(===== ZEO SESSION DIGEST · since [^·]*· )\d{4}-\d{2}-\d{2} \d{2}:\d{2}( · )")
+
+    def _norm_for_comparison(line: str) -> str:
+        line = _digest_header_ts.sub(r"\1<ts>\2", line)
         if "UNCOSIGNED ORG-SCOPE RULINGS" in line:
             # Parenthetical cite differs (RULING-021 vs doctrine); header identity is enough.
             return "--- UNCOSIGNED ORG-SCOPE RULINGS ---"
         return _ruling_cite.sub("doctrine", line)
 
-    assert [_norm_ruling_cites(l) for l in bp] == [_norm_ruling_cites(l) for l in pp]
-    assert [_norm_ruling_cites(l) for l in bpost] == [_norm_ruling_cites(l) for l in ppost]
-    assert [_norm_ruling_cites(l.strip()) for l in bo] == [_norm_ruling_cites(l.strip()) for l in po]
+    assert [_norm_for_comparison(l) for l in bp] == [_norm_for_comparison(l) for l in pp]
+    assert [_norm_for_comparison(l) for l in bpost] == [_norm_for_comparison(l) for l in ppost]
+    assert [_norm_for_comparison(l.strip()) for l in bo] == [_norm_for_comparison(l.strip()) for l in po]
