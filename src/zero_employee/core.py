@@ -22,6 +22,7 @@ import re
 import tomllib
 import datetime
 from collections import namedtuple, defaultdict
+from typing import Any
 import yaml
 
 # V1-C: B2 grandfather manifest — packaged default is empty/unarmed. Private corpora may
@@ -3105,7 +3106,19 @@ def restaufwand(root, stream=None):
                 )
             if not revs:
                 continue
-            revs.sort()
+            # Sort by n ONLY (found live, RULING-279/PRIORITY-NWA-SOW-1 recon):
+            # revs.sort() compares the WHOLE tuple, so an `n`-collision (two files
+            # declaring the same n — a real, pre-existing corpus state; e.g.
+            # ducktyper/editorial-recon has two n:1 files) falls through to comparing
+            # `rest`, which mixes int and None across files and raises TypeError
+            # ('<' not supported between NoneType and int) — restaufwand() crashed on
+            # the live org corpus (ducktyper/editorial-recon, quackverse/lint-mypy-backlog,
+            # zero-employee/ds-6 all n-collide) via `zeo --restaufwand` before this fix,
+            # unrelated to n-collision RESOLUTION semantics (which is a separate, already
+            # -ruled concern — see n-collision reconciliation in this repo's own history).
+            # A stable sort key of `n` alone preserves each file's on-disk (glob) order
+            # among same-n collisions, never comparing rest/done_when/status.
+            revs.sort(key=lambda x: x[0])
             sid = revs[-1][3]
             series = [(n, x) for n, x, _, _, _ in revs if x is not None]
             latest = revs[-1]
@@ -3131,6 +3144,242 @@ def restaufwand(root, stream=None):
                 }
             )
     return out
+
+
+_NWA_RANKABLE_STATUSES = {"DRAFT", "DESIGN", "PROGRESS", "RULING-REQUESTED", "HELD", "HANDOVER", "BLOCKED"}
+_NWA_WEIGHTS = {"dringlichkeit": 0.30, "impact": 0.30, "risiko": 0.15}
+
+
+def _nwa_age_days(updated_str, today=None):
+    """Days since an ISO `updated:` string. None if unparseable (never a silent 0)."""
+    today = today or _dt.date.today()
+    try:
+        d = _dt.date.fromisoformat(str(updated_str).strip())
+    except (ValueError, TypeError):
+        return None
+    return max(0, (today - d).days)
+
+
+def _nwa_minmax_norm(values_by_stream):
+    """Min-max normalize a {stream: float} map to [0, 1] over the LIVE set (RULING-279
+    s2: relative to what else is competing THIS round, not an absolute scale). A
+    single-stream or all-equal set normalizes to 1.0 for everyone (no basis to
+    distinguish; never divide by zero)."""
+    vals = list(values_by_stream.values())
+    if not vals:
+        return {}
+    lo, hi = min(vals), max(vals)
+    if hi <= lo:
+        return {k: 1.0 for k in values_by_stream}
+    return {k: (v - lo) / (hi - lo) for k, v in values_by_stream.items()}
+
+
+def _nwa_citation_graph(root):
+    """Corpus-wide: for every stream, which OTHER streams cite it via `requested_by:`
+    (Impact — what this stream unblocks) and which streams currently RULING-REQUESTED
+    trace their ask back to it (Risiko — delay compounds onto dependents).
+
+    Reuses the existing `<stream>#<n>` / bare-path citation forms this corpus already
+    parses for `check_requested_by` (`_split_requesters`, `_STREAM_N_RE`) rather than
+    inventing a second citation grammar — RULING-279 s2's own design intent (no new
+    per-stream bookkeeping) and this charter's s4 instruction (extend, don't duplicate).
+
+    Returns {target_stream: {"cited_by": set[str], "blocking_open_requests": int}}.
+    """
+    root = pathlib.Path(root).resolve()
+    graph: dict[str, dict[str, Any]] = defaultdict(lambda: {"cited_by": set(), "blocking_open_requests": 0})
+    for sow_dir in find_sow_roots(root):
+        for d in sorted(x for x in sow_dir.iterdir() if x.is_dir()):
+            citer_sid = d.name
+            for f in sorted(d.glob("*.md")):
+                fm = extract_frontmatter(f.read_text(encoding="utf-8", errors="replace"))
+                if not isinstance(fm, dict):
+                    continue
+                citer_sid = str(fm.get("sow") or d.name)
+                rb = str(fm.get("requested_by", "") or "").strip()
+                if not rb:
+                    continue
+                is_open_request = str(fm.get("status", "")).upper().startswith("RULING-REQUESTED")
+                for entry in _split_requesters(rb):
+                    m = _STREAM_N_RE.match(entry) or _STREAM_N_QID_RE.match(entry)
+                    target_sid = None
+                    if m:
+                        target_sid = m.group(1)
+                    else:
+                        m2 = _PATH_WITH_REASON_RE.match(entry)
+                        if m2:
+                            # A bare path citation: resolve to its owning stream dir name
+                            # (the same fallback locate_stream/board_rows use for
+                            # pre-schema targets with no declared sow: field).
+                            target_sid = pathlib.Path(m2.group(1)).parent.name or None
+                    if not target_sid or target_sid == citer_sid:
+                        continue
+                    graph[target_sid]["cited_by"].add(citer_sid)
+                    if is_open_request:
+                        graph[target_sid]["blocking_open_requests"] += 1
+    return graph
+
+
+def nutzwertanalyse(root, *, estimate=None, today=None, api_key_env="ANTHROPIC_API_KEY"):
+    """RULING-279 s2: rank every OPEN/PAUSED/BLOCKED stream by a four-criterion
+    weighted Nutzwert (utility value), so Master has a stated, revisable reason for
+    which stream gets the next session's tokens instead of age alone.
+
+        Nutzwert = (0.30*Dringlichkeit_norm + 0.30*Impact_norm + 0.15*Risiko_norm)
+                   / Restaufwand_tokens
+
+    Every input REUSES an existing computation rather than reinventing it (RULING-279
+    s2's own design intent, PRIORITY-NWA-SOW-1 s2):
+      Dringlichkeit  - age in days of the oldest open (unanswered, unresolved) question
+                       on the stream, from awaiting_ruling()'s own `updated:` field -
+                       the same data --triage's NEEDS MASTER bucket already reads. A
+                       stream with no open question scores 0 (nothing urgent to escalate)
+                       and is NOT thereby excluded from ranking - Restaufwand/Impact still
+                       apply to a stream that is simply mid-flight.
+      Restaufwand    - the stream's own declared `restaufwand:` (remaining units, its own
+                       unit per RULING-202 s3) run through kosten()'s per-claim token
+                       average for that stream (tokens-per-SHIPPED-claim), so the small
+                       declared integer becomes a token-denominated cost: remaining_units
+                       x tokens_per_claim. A stream with claims but no restaufwand
+                       declaration, or a stream whose OWN per-claim figure is unavailable
+                       (zero claims), falls back to the corpus-wide average per-claim
+                       token figure - visibly flagged (see `restaufwand_estimate_kind`),
+                       never silently. A stream with NEITHER a restaufwand declaration NOR
+                       any claims at all cannot be token-priced; per PRIORITY-NWA-SOW-1 s2
+                       / RULING-279 s5's open question, it still RANKS, using the corpus
+                       median restaufwand-tokens as a last-resort denominator, flagged
+                       ESTIMATE-LOCAL-MEDIAN.
+      Impact         - count of OTHER streams whose requested_by: cites this stream
+                       (_nwa_citation_graph, extending check_requested_by's own citation
+                       grammar rather than a new one), plus a flat bonus if the stream's
+                       own issue_first: field is explicitly true (touches the operator's
+                       production critical path per CLAUDE.md's own standing law).
+      Risiko         - count of the citing streams (above) that are THEMSELVES currently
+                       RULING-REQUESTED with an open question - i.e. streams actually
+                       blocked waiting on this one, not just historically related.
+
+    `estimate` is an optional callable(text)->int (default cost.estimate_tokens_local,
+    same default as kosten()/restaufwand()). `api_key_env` is accepted for interface
+    symmetry with the cost verbs but this function never calls anthropic_count_tokens
+    itself - Restaufwand tokens come from the LOCAL estimator via kosten(), per
+    PRIORITY-NWA-SOW-1's own scope (s3: no full anthropic-count-every-stream walk).
+
+    Returns a dict: {"ranked": [...], "criteria": {...per-stream raw values...}}.
+    Each ranked row carries `restaufwand_estimate_kind` in
+    {"PER-STREAM-CLAIM-AVG", "CORPUS-CLAIM-AVG", "ESTIMATE-LOCAL-MEDIAN"} - RULING-279's
+    own tokenizer_label discipline (cost.py) applied to THIS estimate, never a silent
+    degrade (PRIORITY-NWA-SOW-1 done_when item 5).
+    """
+    estimate = estimate or est_tokens
+    root = pathlib.Path(root).resolve()
+    today = today or _dt.date.today()
+
+    files_fm = []
+    for f in iter_sow_files(root):
+        fm = extract_frontmatter(f.read_text(encoding="utf-8", errors="replace"))
+        if isinstance(fm, dict):
+            files_fm.append((str(f), fm))
+    rows = board_rows(files_fm)
+    aw = awaiting_ruling(files_fm, root=root)
+    K = kosten(root, estimate=estimate)
+    R = restaufwand(root)
+    graph = _nwa_citation_graph(root)
+
+    rankable = [r for r in rows if str(r["status"]).upper().split("-SEE")[0] in _NWA_RANKABLE_STATUSES]
+    if not rankable:
+        return {"ranked": [], "criteria": {}}
+
+    # Dringlichkeit: oldest OPEN (unanswered, unresolved) question's age in days, 0 if none.
+    open_by_stream: dict[str, int] = {}
+    for q in aw:
+        if q.get("answered") or q.get("resolved"):
+            continue
+        age = _nwa_age_days(q.get("updated"), today)
+        if age is None:
+            continue
+        open_by_stream[q["stream"]] = max(open_by_stream.get(q["stream"], 0), age)
+    dringlichkeit_raw = {r["stream"]: float(open_by_stream.get(r["stream"], 0)) for r in rankable}
+
+    # Impact / Risiko from the citation graph, plus the issue_first bonus.
+    issue_first_by_stream = {}
+    for path, fm in files_fm:
+        sid = str(fm.get("sow") or pathlib.Path(path).parent.name)
+        if str(fm.get("issue_first", "")).strip().lower() == "true":
+            issue_first_by_stream[sid] = True
+    impact_raw = {}
+    risiko_raw = {}
+    for r in rankable:
+        sid = r["stream"]
+        g = graph.get(sid, {"cited_by": set(), "blocking_open_requests": 0})
+        impact_raw[sid] = float(len(g["cited_by"])) + (1.0 if issue_first_by_stream.get(sid) else 0.0)
+        risiko_raw[sid] = float(g["blocking_open_requests"])
+
+    # Restaufwand -> tokens: declared remaining units x this stream's own tokens-per-claim
+    # (kosten()'s per_claim), falling back to the corpus-wide average, falling back to the
+    # corpus median restaufwand-tokens for a stream with neither — every fallback flagged.
+    per_claim_by_stream = {s["stream"]: s["per_claim"] for s in K["streams"] if s.get("per_claim")}
+    corpus_avg_per_claim = sum(per_claim_by_stream.values()) / len(per_claim_by_stream) if per_claim_by_stream else None
+    remaining_by_stream = {x["stream"]: x["remaining"] for x in R if x.get("remaining") is not None}
+
+    provisional_tokens: dict[str, tuple[float, str]] = {}
+    for r in rankable:
+        sid = r["stream"]
+        remaining = remaining_by_stream.get(sid)
+        if remaining is not None and per_claim_by_stream.get(sid):
+            provisional_tokens[sid] = (remaining * per_claim_by_stream[sid], "PER-STREAM-CLAIM-AVG")
+        elif remaining is not None and corpus_avg_per_claim:
+            provisional_tokens[sid] = (remaining * corpus_avg_per_claim, "CORPUS-CLAIM-AVG")
+        # else: resolved below via the corpus median, once every stream is known.
+
+    known_vals = [v for v, _ in provisional_tokens.values() if v > 0]
+    median_tokens = sorted(known_vals)[len(known_vals) // 2] if known_vals else float(estimate("x") or 1) or 1.0
+    restaufwand_tokens = {}
+    restaufwand_kind = {}
+    for r in rankable:
+        sid = r["stream"]
+        if sid in provisional_tokens:
+            restaufwand_tokens[sid], restaufwand_kind[sid] = provisional_tokens[sid]
+        else:
+            restaufwand_tokens[sid] = median_tokens
+            restaufwand_kind[sid] = "ESTIMATE-LOCAL-MEDIAN"
+        if restaufwand_tokens[sid] <= 0:
+            restaufwand_tokens[sid] = max(median_tokens, 1.0)
+
+    dr_norm = _nwa_minmax_norm(dringlichkeit_raw)
+    im_norm = _nwa_minmax_norm(impact_raw)
+    ri_norm = _nwa_minmax_norm(risiko_raw)
+
+    ranked = []
+    for r in rankable:
+        sid = r["stream"]
+        nutzwert = (
+            _NWA_WEIGHTS["dringlichkeit"] * dr_norm.get(sid, 0.0)
+            + _NWA_WEIGHTS["impact"] * im_norm.get(sid, 0.0)
+            + _NWA_WEIGHTS["risiko"] * ri_norm.get(sid, 0.0)
+        ) / restaufwand_tokens[sid]
+        ranked.append(
+            {
+                "stream": sid,
+                "project": r["project"],
+                "status": r["status"],
+                "nutzwert": nutzwert,
+                "dringlichkeit_days": dringlichkeit_raw.get(sid, 0.0),
+                "impact_count": impact_raw.get(sid, 0.0),
+                "risiko_count": risiko_raw.get(sid, 0.0),
+                "restaufwand_tokens": restaufwand_tokens[sid],
+                "restaufwand_estimate_kind": restaufwand_kind[sid],
+            }
+        )
+    ranked.sort(key=lambda x: -x["nutzwert"])
+    return {
+        "ranked": ranked,
+        "criteria": {
+            "dringlichkeit_raw": dringlichkeit_raw,
+            "impact_raw": impact_raw,
+            "risiko_raw": risiko_raw,
+            "weights": dict(_NWA_WEIGHTS),
+        },
+    }
 
 
 _WORKING_STATUSES = {"DRAFT", "DESIGN", "PROGRESS", "RULING-REQUESTED"}

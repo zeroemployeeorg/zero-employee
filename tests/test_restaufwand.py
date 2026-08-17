@@ -90,3 +90,24 @@ def test_the_LATEST_rev_supplies_done_when(tmp_path):
     _rev(r, 1, 10, dw="OLD")
     _rev(r, 2, 5, dw="NEW")
     assert restaufwand(r)[0]["done_when"] == "NEW"
+
+
+def test_an_n_collision_with_mixed_restaufwand_types_does_not_crash(tmp_path):
+    """Found live against the real org corpus while building RULING-279's
+    Nutzwertanalyse scorer (PRIORITY-NWA-SOW-1, whose Restaufwand criterion calls
+    this function): `zeo --restaufwand` crashed on ducktyper/editorial-recon,
+    quackverse/lint-mypy-backlog, and zero-employee/ds-6 — all three carry a real
+    n-collision (two files independently declaring the same n:), and when one
+    collider declares restaufwand: and the other does not, the OLD `revs.sort()`
+    compared the whole tuple, fell through to comparing `rest` (int vs None), and
+    raised 'not supported between instances of NoneType and int'. Sorting by `n`
+    alone (this fix) never compares rest/done_when/status, so a same-n collision
+    — a real corpus state, not a hypothetical — no longer crashes the function."""
+    root = _corpus(tmp_path)
+    sow_dir = root / "p" / "sow" / "s"
+    sow_dir.mkdir(parents=True, exist_ok=True)
+    (sow_dir / "a.md").write_text("---\nsow: s\nn: 1\nstatus: HELD\nrestaufwand: 0\n---\n\nbody\n", encoding="utf-8")
+    (sow_dir / "b.md").write_text("---\nsow: s\nn: 1\nstatus: SUPERSEDED\n---\n\nbody\n", encoding="utf-8")
+    out = restaufwand(root)
+    assert len(out) == 1
+    assert out[0]["stream"] == "s"
