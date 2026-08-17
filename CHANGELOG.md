@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.3.3] - 2026-08-17
+
+### Fixed
+All three items below were reported in a single field report from a peer Master
+running `zeo cold-start` and `zeo --triage`/`design` filings against a real,
+freshly cold-started org (ducktyper-ai/org) — independently re-verified against
+real bytes in that corpus before fixing, not taken on trust.
+
+- **A cleanly-linting `design`-genre filing could poison the DARK burn-down
+  meter.** A `design:` filing (RULING-286's fifth genre) correctly carries no
+  `sow:` field; sitting in the same `sow/<stream>/` directory as a real numbered
+  SOW, `board_rows()` grouped ALL files in that directory regardless of genre,
+  so the design filing fell back to its bare directory name as a brand-new
+  PHANTOM stream id with nothing orderable — rendering UNKNOWN and inflating
+  `--triage`'s DARK count, even though the real sibling stream was untouched and
+  fully healthy. `board_rows()` now skips any file whose `discriminate()` genre
+  is not `sow` before grouping. Reproduced live against the real corpus (DARK: 1
+  → DARK: 0 after the fix) and covered by a new falsified-first regression test.
+- **`zeo cold-start` item 9 (TODO/FIXME/XXX scan) could transcribe an unbounded
+  line into a filed SOW.** `git grep -I` treats a text file as text regardless
+  of content — a single-line SVG with base64-embedded image data that happened
+  to contain a TODO/FIXME/XXX-shaped substring was copied VERBATIM, producing a
+  2.4MB filing (two single lines over 1.2MB each) against ~5.4KB siblings.
+  Every survey item's evidence now funnels through one render chokepoint that
+  caps each line at 400 bytes and marks the elision explicitly — never silent.
+- **`sow_repo`/`work_repo` are `Any`-typed (deliberately, so the live corpus
+  stays gradeable across many real naming conventions) — but that meant the
+  packaged scaffold placeholder (`sow_repo: example-org/org`,
+  `work_repo: example-org/<project>`) could survive unedited into a real, filed,
+  GREEN-graded SOW with no way to ever catch it.** All six of the reporting
+  corpus's real cold-start filings carried the literal placeholder against a
+  real remote of `ducktyper-ai/org`. Added a narrow, false-positive-free WARN
+  (`sow-repo-placeholder`/`work-repo-placeholder`) that fires only on the exact
+  packaged default string — never a judgment about what a real value should
+  look like, so no other corpus's real (and varied) naming is put at risk.
+
 ## [0.3.2] - 2026-08-17
 
 ### Fixed

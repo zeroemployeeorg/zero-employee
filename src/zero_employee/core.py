@@ -683,6 +683,7 @@ def lint_file(
     findings += check_schema_rev(fm, current_rev)
     findings += check_project(path, fm, root)
     findings += check_b2(path, fm, root)
+    findings += check_sow_repo_placeholder(path, fm, root)
     if any(f.severity == ERROR for f in findings):
         return "FAIL", findings
     # CANNOT-GRADE (Sparring doctrine): the file declares schema-era intent but the linter
@@ -1722,6 +1723,58 @@ def check_project(path, fm, root=None) -> list[Finding]:
                     "flat-legacy SOW has no `project:` — backfill before migration (B1 early identity)",
                 )
             )
+    return out
+
+
+# The scaffold/CLI default identity strings a real filed SOW must never carry
+# unedited. Both `sow_repo`/`work_repo` are typed `Any` in schemas/sow.py — a
+# DELIBERATE choice (extra="ignore", every field permissive, so the live corpus
+# stays gradeable across many real naming conventions no fixed enum could
+# anticipate) — so THIS check does not attempt to validate "is this a real repo
+# name," which would be unbounded false-positive risk across every corpus.
+# It checks one narrow, unambiguous thing instead: does the value literally
+# equal the packaged placeholder default (sow_authoring.py's DEFAULT_SOW_REPO /
+# its work_repo f-string), which can only mean the field was never filled in.
+_PLACEHOLDER_SOW_REPO = "example-org/org"
+_PLACEHOLDER_WORK_REPO_PREFIX = "example-org/"
+
+
+def check_sow_repo_placeholder(path, fm, root=None) -> list[Finding]:
+    """MEASURED live (ducktyper-ai/org, 2026-08-17), reported by a peer Master:
+    `sow_repo: example-org/org` (sow_authoring.py's DEFAULT_SOW_REPO, and
+    migrate.py's Literal pins the SAME placeholder) survived unedited into six
+    real, filed, GREEN-graded SOWs whose real remote was ducktyper-ai/org — the
+    peer had to VOID the field by ruling because nothing upstream could ever
+    catch it: `sow_repo`/`work_repo` are `Any`-typed in schemas/sow.py, so no
+    type constraint can fail on it. "A gate that cannot fail on a field is not
+    gating that field." This is the narrowest fix that does not create false
+    positives across every other corpus's real (and varied) sow_repo/work_repo
+    naming: a WARN specifically when the value IS the literal packaged
+    placeholder, never a judgment about what a REAL value should look like.
+    """
+    out: list[Finding] = []
+    sow_repo = fm.get("sow_repo")
+    if sow_repo is not None and str(sow_repo).strip() == _PLACEHOLDER_SOW_REPO:
+        out.append(
+            Finding(
+                WARN,
+                "sow-repo-placeholder",
+                f"sow_repo: '{_PLACEHOLDER_SOW_REPO}' is the packaged scaffold DEFAULT, not a "
+                "real identity — this field was never filled in with the actual sows repo. "
+                "Fix: set sow_repo to the real remote (e.g. from `git remote get-url origin`)",
+            )
+        )
+    work_repo = fm.get("work_repo")
+    if work_repo is not None and str(work_repo).strip().startswith(_PLACEHOLDER_WORK_REPO_PREFIX):
+        out.append(
+            Finding(
+                WARN,
+                "work-repo-placeholder",
+                f"work_repo: '{work_repo}' starts with the packaged scaffold default prefix "
+                f"'{_PLACEHOLDER_WORK_REPO_PREFIX}', not a real identity — this field was likely "
+                "never filled in. Fix: set work_repo to the real work repo name or path",
+            )
+        )
     return out
 
 
@@ -4269,6 +4322,23 @@ def board_rows(files_fm):
             continue
         p = pathlib.Path(path)
         if "sow" not in [x.lower() for x in p.parts]:
+            continue
+        # MEASURED live (ducktyper-ai/org, 2026-08-17, reported by a peer Master): a
+        # cleanly-linting `design`/`ruling`/`learnings`/`charter` filing sitting inside
+        # a sow/<stream>/ directory alongside real numbered SOWs was being folded into
+        # THIS function's stream-grouping walk regardless of genre. A design filing
+        # correctly carries no `sow:` field (design-authoring-SKILL specifies none), so
+        # it fell back to `p.parent.name` as its stream id — spawning a PHANTOM stream
+        # keyed on the bare directory name, entirely disjoint from its real sibling
+        # SOWs (which each declare their own `sow:` id, per doctrine's own namespace
+        # fix). That phantom stream has no integer-n entries at all, so
+        # latest_rev_of() returns None and it renders UNKNOWN — a document that lints
+        # CLEAN in a fully SUPPORTED genre was inflating the DARK burn-down meter, the
+        # exact "an instrument that cannot see a violation must not report health"
+        # failure this corpus's own doctrine names. Only `discriminate()`-as-"sow"
+        # files participate in rev-ordering; everything else in a stream dir is read
+        # by other projections (rulings_index, etc.), never by this one.
+        if discriminate(path, fm) != "sow":
             continue
         sid = str(fm.get("sow") or p.parent.name)
         streams.setdefault(sid, []).append(

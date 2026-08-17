@@ -427,16 +427,41 @@ def _slugify_project(name: str) -> str:
 # ── SOW body rendering ───────────────────────────────────────────────
 
 
+_MAX_EVIDENCE_LINE = 400  # bytes, per rendered line -- see _truncate_evidence_line
+
+
+def _truncate_evidence_line(ln: str, limit: int = _MAX_EVIDENCE_LINE) -> str:
+    """MEASURED live (ducktyper-ai/org, 2026-08-17), reported by a peer Master: `git
+    grep -I` treats a text SVG as a text file (it is one -- `-I` only skips
+    BINARY files), so an SVG containing a base64-embedded PNG whose bytes happen
+    to spell "TODO" gets transcribed VERBATIM into a filed SOW -- a single line
+    over 1.2MB, in a filing whose siblings run ~5KB. Worse than the size alone:
+    it silently corrupted the FINDING itself (marker_count read 6 where the true
+    count was 4 -- two "markers" were base64 noise inside a logo, not real code
+    markers), which is exactly the failure a mechanical, value-free survey exists
+    to avoid: wrong in form (real command, real exit code, lints clean) while
+    wrong in substance. Every survey item's evidence funnels through this one
+    render chokepoint, so capping HERE protects the whole survey against any
+    command whose output could contain one absurdly long line -- not just item
+    9's grep -- without touching the pre-render dicts that legitimately need
+    full stdout (marker_lines' line-splitting, gh_issue_count's substring count).
+    The elision is marked, never silent (doctrine: an instrument that cannot show
+    the whole truth must say so, not hide the gap)."""
+    if len(ln) <= limit:
+        return ln
+    return ln[:limit] + f" …[TRUNCATED: {len(ln) - limit} more bytes on this line, elided]"
+
+
 def _render_evidence_row(ev: dict) -> str:
     lines = [f"  - `$ {ev['command']}`  (exit {ev['exit_code']})"]
     if ev.get("stdout"):
         for ln in ev["stdout"].splitlines() or [""]:
-            lines.append(f"    | {ln}")
+            lines.append(f"    | {_truncate_evidence_line(ln)}")
     else:
         lines.append("    | (no stdout)")
     if ev.get("stderr"):
         for ln in ev["stderr"].splitlines():
-            lines.append(f"    ! {ln}")
+            lines.append(f"    ! {_truncate_evidence_line(ln)}")
     return "\n".join(lines)
 
 

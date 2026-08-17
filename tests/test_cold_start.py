@@ -357,6 +357,44 @@ def test_cold_start_sow_lints_clean(target_repo, sows_repo):
     assert not errors, [f"{f.code}: {f.message}" for f in errors]
 
 
+def test_cold_start_caps_an_unbounded_evidence_line_and_marks_the_elision(tmp_path):
+    """MEASURED live (ducktyper-ai/org, 2026-08-17), reported by a peer Master:
+    `git grep -I` treats a text SVG as text (it is one -- `-I` only skips
+    BINARY files), so a single-line SVG containing base64-embedded image data
+    that happens to spell TODO/FIXME/XXX gets copied VERBATIM into the filed
+    SOW -- one real repro produced a 2.4MB filing with two single lines over
+    1.2MB each, against ~5.4KB siblings. Reproduce the same class directly: a
+    real committed file whose single line is far longer than any real code
+    line, containing a real TODO marker match, run through the REAL survey +
+    render pipeline (not a unit-level string), and confirm the WRITTEN file on
+    disk stays bounded and the elision is stated, not silent."""
+    repo = tmp_path / "oversized-line-repo"
+    repo.mkdir()
+    _git(repo, "init", "-b", "main")
+    _git(repo, "config", "user.email", "t@example.com")
+    _git(repo, "config", "user.name", "Test")
+    huge_line = "x" * 2_000_000 + " TODO " + "y" * 2_000_000
+    (repo / "logo.svg").write_text(huge_line + "\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-m", "initial")
+
+    project = derive_project_name(repo)
+    survey = run_partial_survey(repo)
+    sows_root = tmp_path / "sows-repo"
+    from zero_employee.scaffold import init_corpus
+
+    init_corpus(sows_root)
+    result = write_ist_aufnahme_sow(sows_root, project, survey)
+    assert result["ok"], result["reason"]
+
+    written = pathlib.Path(result["path"])
+    size = written.stat().st_size
+    assert size < 50_000, f"a single oversized evidence line must not balloon the whole filing (got {size} bytes)"
+    body = written.read_text(encoding="utf-8")
+    assert "TRUNCATED" in body, "an elided evidence line must say so, never silently disappear"
+    assert "x" * 2_000_000 not in body, "the full oversized line must not survive into the written filing"
+
+
 # ---------------------------------------------------------------------------
 # 3. RULING-278 s0 regression: a real, non-placeholder survey where `zeo
 #    scaffold` produces an empty stub.
