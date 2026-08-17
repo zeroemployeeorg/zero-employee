@@ -249,6 +249,70 @@ def test_propose_rejects_bad_line_range(tmp_path):
     assert "line range" in err.lower() or "bounds" in err.lower()
 
 
+def test_propose_rejects_a_command_done_when_item_with_no_command_field(tmp_path):
+    """MEASURED (docs/tutorial build, 2026-08-17): DoneWhenItem's `command`,
+    `expect`, and `criterion` fields were all independently optional with no
+    cross-check against `type`. A `type: "command"` item spelled with only
+    `criterion` (the natural mistake — the tool's own printed mission
+    questions ask for "the smallest change" and a "criterion" regardless of
+    which done_when type answers it) passed validation cleanly, then the SOW
+    renderer read the never-set `command` field and rendered the literal
+    string "`None` -> exit 0" into the shipped SOW body — no error anywhere
+    in the chain. Must now fail at propose time, with a message naming the
+    actual mismatch."""
+    root = _corpus(tmp_path)
+    ev = _evidence_file(root)
+    result, _ = create_intake(root, title="Propose bad done_when", what="x")
+    path = root / result.path
+    head = git_head(root) or "no-git"
+    rel = str(ev.relative_to(root))
+    _, _, err = propose_intake(
+        root,
+        path,
+        {
+            "repo_head": head,
+            "observations": [{"fact": "f", "evidence": {"path": rel, "line_start": 1, "line_end": 2}}],
+            "implementation": {
+                "problem": "p",
+                "invariant": "i",
+                "approach": ["a"],
+                # the exact mistake: type says command, but only criterion is set
+                "done_when": [{"type": "command", "criterion": "pytest -> 2 passed"}],
+            },
+        },
+    )
+    assert "command" in err.lower()
+    assert err != ""
+
+
+def test_propose_accepts_a_well_formed_command_done_when_item(tmp_path):
+    """The companion case: a correctly-shaped command item (command + expect
+    set, no criterion) must still pass — the fix must not over-correct into
+    rejecting valid input."""
+    root = _corpus(tmp_path)
+    ev = _evidence_file(root)
+    result, _ = create_intake(root, title="Propose good done_when", what="x")
+    path = root / result.path
+    head = git_head(root) or "no-git"
+    rel = str(ev.relative_to(root))
+    _, proposal, err = propose_intake(
+        root,
+        path,
+        {
+            "repo_head": head,
+            "observations": [{"fact": "f", "evidence": {"path": rel, "line_start": 1, "line_end": 2}}],
+            "implementation": {
+                "problem": "p",
+                "invariant": "i",
+                "approach": ["a"],
+                "done_when": [{"type": "command", "command": "pytest test_x.py", "expect": "2 passed"}],
+            },
+        },
+    )
+    assert err == ""
+    assert proposal is not None
+
+
 def test_propose_rejects_stale_head(tmp_path):
     root = _corpus(tmp_path)
     # Need a real git repo for stale head check

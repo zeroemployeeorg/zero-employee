@@ -775,6 +775,31 @@ class DoneWhenItem(BaseModel):
     expect: str | None = None
     criterion: str | None = None
 
+    @model_validator(mode="after")
+    def _field_matches_type(self) -> "DoneWhenItem":
+        # MEASURED (docs/tutorial build, 2026-08-17): all three of command/
+        # expect/criterion were independently optional with no cross-check, so
+        # a done_when item spelled with `criterion` but `type: "command"` (the
+        # natural mistake — the tool's own printed mission questions ask for a
+        # "criterion", regardless of which type answers it) passed validation
+        # cleanly, then rendered `command: None` -> literally the string
+        # "`None` -> exit 0" into the SOW body, no error anywhere. Presence of
+        # AN item passed; the item's actual content was garbage — exactly the
+        # class of gap this org's own doctrine calls presence-without-behavior.
+        if self.type == "command" and not (self.command or "").strip():
+            raise ValueError(
+                'done_when item has type: "command" but no non-empty `command` field '
+                "(the actual command to run) — did you mean to set `command`, or was "
+                'type: "inspection" (which reads `criterion`) intended instead?'
+            )
+        if self.type == "inspection" and not (self.criterion or "").strip():
+            raise ValueError(
+                'done_when item has type: "inspection" but no non-empty `criterion` '
+                "field (what to check) — did you mean to set `criterion`, or was "
+                'type: "command" (which reads `command`) intended instead?'
+            )
+        return self
+
 
 class ImplementationContract(BaseModel):
     model_config = ConfigDict(extra="allow")
