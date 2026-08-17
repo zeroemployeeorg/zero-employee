@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 import subprocess
 import textwrap
 
@@ -284,3 +285,40 @@ def test_packaged_rates_load():
     rates = cost.get_model_rates("claude-sonnet-4-6")
     assert rates["input_per_mtok"] == 3.0
     assert rates["output_per_mtok"] == 15.0
+
+
+def test_packaged_default_model_is_the_current_sonnet_generation_not_a_stale_one():
+    """MEASURED (2026-08-17): default_model was pinned to "claude-sonnet-4-6" while the
+    packaged table already carried correct, current "claude-sonnet-5" rates sitting
+    unused underneath it -- every --kosten/--repo-cost/--session-cost call with no
+    explicit --model was silently pricing against an older model than the one actually
+    doing the work. (A price-comparison heuristic was tried first and rejected: Sonnet
+    5 launched at a CHEAPER introductory rate than 4-6, so "priced lower than a sibling"
+    does not reliably mean "older" -- that would have silently passed against the very
+    staleness it was meant to catch. Caught by actually running the heuristic against
+    the pre-fix table before trusting it, not by reasoning about it in the abstract.)
+    This asserts the generation number directly instead: default_model must be a
+    "claude-sonnet-N" id whose N is the max N among any "claude-sonnet-*" entries in
+    the table, so a NEW sonnet release added to the table without updating
+    default_model fails this test rather than silently sitting unused."""
+    table = cost.load_rate_table()
+    sonnet_ids = [m for m in table["models"] if re.match(r"^claude-sonnet-\d+(-\d+)?$", m)]
+
+    def _generation(model_id: str) -> tuple[int, int]:
+        # "claude-sonnet-5" -> (5, 0); "claude-sonnet-4-6" -> (4, 6)
+        nums = [int(x) for x in re.findall(r"\d+", model_id)]
+        return (nums[0], nums[1] if len(nums) > 1 else 0)
+
+    newest = max(sonnet_ids, key=_generation)
+    assert table["default_model"] == newest, (
+        f"default_model={table['default_model']!r} is not the newest sonnet generation "
+        f"in the table ({newest!r} is newer) -- the default has fallen behind the catalog"
+    )
+
+
+def test_packaged_rates_table_carries_the_current_model_catalog():
+    """The three most-current model IDs (per the shipped claude-api skill's own
+    pricing table) must be present, not silently missing while older siblings are."""
+    table = cost.load_rate_table()
+    for model_id in ("claude-opus-5", "claude-sonnet-5", "claude-fable-5", "claude-mythos-5"):
+        assert model_id in table["models"], f"{model_id} missing from the packaged rate table"

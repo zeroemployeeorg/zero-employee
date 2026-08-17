@@ -2,10 +2,38 @@
 # Source: https://platform.claude.com/docs/en/about-claude/pricing
 # These are DERIVED estimates for zeo reporting — not invoices.
 # Update as_of when you refresh from the official table.
+#
+# MEASURED (2026-08-17): default_model was "claude-sonnet-4-6" while the table
+# already carried correct, current "claude-sonnet-5" rates unused underneath
+# it -- every --kosten/--repo-cost/--session-cost call with no explicit
+# --model was silently pricing against an older model than the one actually
+# doing the work in this session. The tool has no way to auto-detect which
+# model is really running (a real constraint, not a bug); the fix is keeping
+# this default current, not building an auto-detector. Bumped default_model
+# and as_of; added the three current-catalog rows (claude-opus-5,
+# claude-fable-5, claude-mythos-5) that were also missing from this table.
 
-as_of = "2026-08-08"
+as_of = "2026-08-17"
 source = "https://platform.claude.com/docs/en/about-claude/pricing"
-default_model = "claude-sonnet-4-6"
+default_model = "claude-sonnet-5"
+
+[models."claude-opus-5"]
+input_per_mtok = 5.0
+output_per_mtok = 25.0
+cache_read_per_mtok = 0.50
+cache_write_per_mtok = 6.25
+
+[models."claude-fable-5"]
+input_per_mtok = 10.0
+output_per_mtok = 50.0
+cache_read_per_mtok = 1.00
+cache_write_per_mtok = 12.50
+
+[models."claude-mythos-5"]
+input_per_mtok = 10.0
+output_per_mtok = 50.0
+cache_read_per_mtok = 1.00
+cache_write_per_mtok = 12.50
 
 [models."claude-opus-4-8"]
 input_per_mtok = 5.0
