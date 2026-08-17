@@ -150,6 +150,14 @@ def install_bridges(root: pathlib.Path | str, tools: Iterable[str] | None = None
         act = _write_if_absent(settings, _read_template("claude-settings.json"))
         actions.append({"path": ".claude/settings.json", "action": act})
 
+        hooks_dir = root / ".claude" / "hooks"
+        hooks_dir.mkdir(parents=True, exist_ok=True)
+        guard = hooks_dir / "check-trunk-guard.sh"
+        act = _write_if_absent(guard, _read_template("claude-hooks", "check-trunk-guard.sh"))
+        if act == "WRITTEN":
+            guard.chmod(guard.stat().st_mode | 0o111)
+        actions.append({"path": ".claude/hooks/check-trunk-guard.sh", "action": act})
+
     if "agents" in tools_set:
         agents_dir = root / ".agents"
         agents_dir.mkdir(parents=True, exist_ok=True)

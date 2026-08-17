@@ -68,24 +68,26 @@ include = [
 ]
 
 [tool.hatch.build.targets.wheel]
+# REPO-EQUIP-SOW-1 s4 / SOW-4: `packages = ["src/zero_employee"]` with no
+# `include`/`only-include` restriction makes hatchling's default project-file
+# walk (hatchling/builders/plugin/interface.py: recurse_project_files, an
+# os.walk under the package root) ship every file under src/zero_employee -
+# not just *.py - with no per-file listing required. Verified by building the
+# wheel with the previous hand-maintained `force-include` table removed
+# entirely: model_rates.toml, grandfather_manifest.toml, every
+# scaffold_templates/ and hooks_templates/ file (including a newly added one,
+# claude-hooks/check-trunk-guard.sh, added by this same change) all shipped
+# unlisted. The hand-list was never catching a real gap - it was redundant
+# with default behavior the whole time, which is exactly how a new template
+# file could still ship even though nobody remembered to add a line: the line
+# was doing nothing. `force-include` is deliberately NOT reintroduced here for
+# these files: an unnecessary explicit list is one more place to forget to
+# update, and it was the mechanism this SOW measured as the actual risk.
+# tests/test_packaging.py is the guarantee this stays true - it builds the
+# wheel and fails if any file walked from scaffold_templates/ or
+# hooks_templates/ on disk is absent from it, so a future `include`/
+# `only-include` restriction that narrows the default walk is still caught.
 packages = ["src/zero_employee"]
-
-[tool.hatch.build.targets.wheel.force-include]
-"src/zero_employee/data/model_rates.toml" = "zero_employee/data/model_rates.toml"
-"src/zero_employee/grandfather_manifest.toml" = "zero_employee/grandfather_manifest.toml"
-"src/zero_employee/hooks_templates/pre-commit" = "zero_employee/hooks_templates/pre-commit"
-"src/zero_employee/hooks_templates/cc-session-start.sh" = "zero_employee/hooks_templates/cc-session-start.sh"
-"src/zero_employee/hooks_templates/cc-stop.sh" = "zero_employee/hooks_templates/cc-stop.sh"
-"src/zero_employee/hooks_templates/cc-pretooluse-git.sh" = "zero_employee/hooks_templates/cc-pretooluse-git.sh"
-"src/zero_employee/hooks_templates/install.sh" = "zero_employee/hooks_templates/install.sh"
-"src/zero_employee/scaffold_templates/claude-md/CLAUDE.md" = "zero_employee/scaffold_templates/claude-md/CLAUDE.md"
-"src/zero_employee/scaffold_templates/CLAUDE.md" = "zero_employee/scaffold_templates/CLAUDE.md"
-"src/zero_employee/scaffold_templates/project-CLAUDE.md" = "zero_employee/scaffold_templates/project-CLAUDE.md"
-"src/zero_employee/scaffold_templates/000-governance.mdc" = "zero_employee/scaffold_templates/000-governance.mdc"
-"src/zero_employee/scaffold_templates/claude-settings.json" = "zero_employee/scaffold_templates/claude-settings.json"
-"src/zero_employee/scaffold_templates/agents/zeo-architect.md" = "zero_employee/scaffold_templates/agents/zeo-architect.md"
-"src/zero_employee/scaffold_templates/agents/zeo-claimant.md" = "zero_employee/scaffold_templates/agents/zeo-claimant.md"
-"src/zero_employee/scaffold_templates/agents/zeo-verifier.md" = "zero_employee/scaffold_templates/agents/zeo-verifier.md"
 
 # ── Dependencies & Development Groups ──────────────────────────────────
 [dependency-groups]
