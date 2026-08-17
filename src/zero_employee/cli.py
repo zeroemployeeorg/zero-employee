@@ -994,6 +994,12 @@ USAGE
   zeo equip <repo> [--force|--diff]
                                   Install .claude/ (settings, trunk-guard hook, agents)
                                   + CLAUDE.md into a work repo. Never clobbers by default.
+  zeo cold-start <repo-path> [--sows-root PATH] [--project NAME]
+                                  RULING-278 s3 Ist-Aufnahme, PARTIAL: checklist items
+                                  1/3/8/9/10 only (items 2,4-7 need the stack detector,
+                                  not yet shipped -- deferred and named in the output).
+                                  Read-only against the target repo; writes ONE SOW,
+                                  status: FINDING, into the SOWS repo, never the work repo.
   zeo --inbox <stream> [path]
                                   Show ONE stream's open questions + rulings that answered it.
                                   Path optional - run it from anywhere: zeo --inbox example-stream
@@ -1484,6 +1490,76 @@ def _cmd_bridges(argv: list[str]) -> int:
     print(f"BRIDGES: {', '.join(info['tools'])} at {info['root']}")
     for act in info.get("actions", []):
         print(f"  {act['action']}: {act['path']}")
+    return 0
+
+
+def _cmd_cold_start(argv: list[str]) -> int:
+    """COLD-START-SOW-2: `zeo cold-start <repo-path>` — RULING-278 s3 checklist
+    items 1, 3, 8, 9, 10 only (items 2, 4-7 need REPO-EQUIP-SOW-1's stack
+    detector, not yet shipped; deferred and named plainly in the output SOW).
+
+    SAFETY (RULING-278 s5 / COLD-START-SOW-1 s3, the load-bearing property):
+    zero commits, zero file writes, into the TARGET work repo. Every survey
+    item below is a read-only git/gh/grep/test call; the ONE write this verb
+    performs lands in the SOWS repo, under
+    projects/<project>/sow/cold-start/<PROJECT>-COLD-START-SOW-1-ist-aufnahme.md
+    -- never under the surveyed repo itself.
+    """
+    from .cold_start import derive_project_name, run_partial_survey, write_ist_aufnahme_sow
+
+    positionals = [a for a in argv if not str(a).startswith("-")]
+    if not positionals:
+        print("Usage: zeo cold-start <repo-path> [--sows-root PATH] [--project NAME]", file=sys.stderr)
+        return 2
+    target = pathlib.Path(positionals[0]).resolve()
+    if not target.is_dir():
+        print(f"zeo cold-start: not a directory: {target}", file=sys.stderr)
+        return 2
+
+    sows_root_override = None
+    project_override = None
+    i = 0
+    while i < len(argv):
+        if argv[i] == "--sows-root" and i + 1 < len(argv):
+            sows_root_override = pathlib.Path(argv[i + 1]).resolve()
+            i += 2
+            continue
+        if argv[i] == "--project" and i + 1 < len(argv):
+            project_override = argv[i + 1]
+            i += 2
+            continue
+        i += 1
+
+    sows_root = sows_root_override or _discover_root(None)
+    if sows_root is None:
+        print(
+            "zeo cold-start: couldn't find the SOWS repo (no claude-md/CLAUDE.md above cwd). "
+            "Pass --sows-root or run from inside the sows corpus.",
+            file=sys.stderr,
+        )
+        return 2
+
+    try:
+        survey = run_partial_survey(target)
+    except FileNotFoundError as e:
+        print(f"zeo cold-start: {e}", file=sys.stderr)
+        return 2
+
+    project = project_override or derive_project_name(target)
+    result = write_ist_aufnahme_sow(sows_root, project, survey)
+    if not result["ok"]:
+        print(f"zeo cold-start: SOW write failed: {result['reason']}", file=sys.stderr)
+        for f in result.get("findings") or []:
+            print(f"    {_SYM.get(f.severity, '?')} [{f.code}] {f.message}", file=sys.stderr)
+        return 1
+
+    print(f"COLD-START: partial Ist-Aufnahme survey of {target}")
+    print(f"  ran items: {', '.join(str(i) for i in survey['ran_items'])}")
+    print(
+        f"  deferred items: {', '.join(str(n) for n, _name, _why in survey['deferred_items'])} (need the stack detector)"
+    )
+    print(f"  SOW written: {result['path']}")
+    print("  zero commits, zero writes made to the target work repo (survey is read-only)")
     return 0
 
 
@@ -2467,6 +2543,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_bridges(args[1:])
     if args and args[0] == "equip":
         return _cmd_equip(args[1:])
+    if args and args[0] == "cold-start":
+        return _cmd_cold_start(args[1:])
     if args and args[0] == "sow":
         return _cmd_sow(args[1:])
     if args and args[0] == "intake":
