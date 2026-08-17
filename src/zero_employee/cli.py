@@ -94,9 +94,11 @@ from .core import (
     check_binds_corpus,
     build_sow_n_index,
     check_ruling_receipts,
+    check_resolves,
     build_stem_index,
     git_ref_state,
     format_ref_disclosure,
+    open_questions_summary,
 )
 
 _SYM = {ERROR: "✗", WARN: "⚠", HINT: "→"}
@@ -235,6 +237,27 @@ def _inbox(root, stream) -> int:
         k, tgt = r["resolved"]
         print(f"  SOW-{r['rev']:<4} <- {tgt}   {r['file']}")
     if not superseded:
+        print("  (none)")
+    print("")
+    # RULING-268 s1 / charter Phase 1 item 3: per-file open_questions: rollup, independent
+    # of the RULING-REQUESTED-only `aw` list above (a file can carry open_questions: at
+    # any status — awaiting_ruling()'s filter does not apply here). Additive: a stream
+    # with no open_questions: anywhere prints the same "(none)" every prior inbox run
+    # already printed nothing for, so a file with zero open_questions: rows is untouched.
+    oq_rows = []
+    for path, fm in files_fm:
+        if str(fm.get("sow") or "").lower() != stream.lower():
+            continue
+        summary = open_questions_summary(fm)
+        if summary is None:
+            continue
+        oq_rows.append((path, fm, summary))
+    print("OPEN QUESTIONS (per-file open_questions: rollup — RULING-268):")
+    for path, fm, summary in sorted(oq_rows, key=lambda t: str(t[1].get("updated", "?"))):
+        tag = summary["tag"]
+        label = f"{tag} ({summary['resolved']}/{summary['total']})" if tag == "PARTIAL" else tag
+        print(f"  {label:<14} {pathlib.Path(path).name}")
+    if not oq_rows:
         print("  (none)")
     return 0
 
@@ -3194,6 +3217,15 @@ def main(argv: list[str] | None = None) -> int:
         commit_mode=commit_check,
         sow_index=_sow_index,
         stem_index=_stem_index,
+    ).items():
+        per_file.setdefault(path, []).extend(extra)
+    # RULING-268 s1 item 2: resolves: <stream>#<n>#<question-id> — the fine-grained
+    # sibling of check_ruling_receipts immediately above, same corpus-wide _sow_index.
+    for path, extra in check_resolves(
+        files_fm,
+        root,
+        commit_mode=commit_check,
+        sow_index=_sow_index,
     ).items():
         per_file.setdefault(path, []).extend(extra)
 

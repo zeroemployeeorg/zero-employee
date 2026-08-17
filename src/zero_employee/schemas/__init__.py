@@ -15,7 +15,7 @@ from .common import (
 from .intake import grade_intake, normalize_intake_status
 from .learnings import grade_learnings
 from .ruling import grade_ruling
-from .sow import grade_sow, keystone_messages
+from .sow import grade_sow, keystone_messages, open_questions_messages
 
 __all__ = [
     "LIFECYCLES",
@@ -30,4 +30,5 @@ __all__ = [
     "grade_sow",
     "keystone_messages",
     "normalize_intake_status",
+    "open_questions_messages",
 ]
