@@ -6,6 +6,7 @@ Self-contained: does not touch doctrine --resync-* machinery or product seats
 
 from __future__ import annotations
 
+import difflib
 import pathlib
 import re
 from collections.abc import Iterable
@@ -15,6 +16,17 @@ _IMPORT_RE = re.compile(r"""^\s*@import\s+["']([^"']+)["']\s*$""")
 _MAX_IMPORT_DEPTH = 16
 _TOOL_FLAGS = frozenset({"cursor", "gemini", "claude", "agents", "all"})
 _PERSONAS = ("zeo-architect.md", "zeo-claimant.md", "zeo-verifier.md")
+_ZEO_AGENTS = ("zeo-master.md", "zeo-stream.md", "zeo-sparring.md")
+
+# REPO-EQUIP-SOW-5 (`zeo equip`) ALWAYS tier: (dest-relative-path, template-parts, executable?).
+# Matches SOW-1 s1's table exactly. Sourcing of the agent defs is documented in
+# scaffold_templates/agents/ and this stream's own SOW filing.
+_EQUIP_ALWAYS_FILES: tuple[tuple[str, tuple[str, ...], bool], ...] = (
+    (".claude/settings.json", ("claude-settings.json",), False),
+    (".claude/hooks/check-trunk-guard.sh", ("claude-hooks", "check-trunk-guard.sh"), True),
+    ("CLAUDE.md", ("CLAUDE.md",), False),
+    *((f".claude/agents/{name}", ("agents", name), False) for name in _ZEO_AGENTS),
+)
 
 
 def _templates_dir() -> pathlib.Path:
@@ -167,6 +179,65 @@ def install_bridges(root: pathlib.Path | str, tools: Iterable[str] | None = None
             actions.append({"path": f".agents/{name}", "action": act})
 
     return {"root": str(root), "tools": sorted(tools_set), "actions": actions}
+
+
+def equip_repo(
+    root: pathlib.Path | str,
+    *,
+    force: bool = False,
+    diff: bool = False,
+) -> dict:
+    """Install the ALWAYS-tier `.claude/` + `CLAUDE.md` files into a work repo.
+
+    REPO-EQUIP-SOW-5 (step 2 of REPO-EQUIP-SOW-1's charter): `.claude/settings.json`,
+    `.claude/hooks/check-trunk-guard.sh`, `CLAUDE.md`, `.claude/agents/zeo-{master,stream,sparring}.md`.
+
+    Never clobbers an existing file by default (reported as "kept"). `force=True`
+    overwrites. `diff=True` writes nothing and instead reports a unified diff (or
+    "would create" for a new file) for every target.
+
+    Reuses the same never-clobber shape `install_bridges()` already established for
+    the `--claude` bridge flag (`_write_if_absent`) rather than a second copy
+    mechanism; this function adds the force/diff modes that flag doesn't need.
+    """
+    root = pathlib.Path(root).resolve()
+    actions: list[dict] = []
+
+    for rel_path, template_parts, executable in _EQUIP_ALWAYS_FILES:
+        dest = root / rel_path
+        content = _read_template(*template_parts)
+        existed = dest.exists()
+
+        if diff:
+            if not existed:
+                actions.append({"path": rel_path, "action": "would-create", "diff": None})
+                continue
+            current = dest.read_text(encoding="utf-8")
+            if current == content:
+                actions.append({"path": rel_path, "action": "unchanged", "diff": None})
+                continue
+            udiff = "".join(
+                difflib.unified_diff(
+                    current.splitlines(keepends=True),
+                    content.splitlines(keepends=True),
+                    fromfile=f"a/{rel_path}",
+                    tofile=f"b/{rel_path}",
+                )
+            )
+            actions.append({"path": rel_path, "action": "would-change", "diff": udiff})
+            continue
+
+        if existed and not force:
+            actions.append({"path": rel_path, "action": "kept"})
+            continue
+
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(content, encoding="utf-8")
+        if executable:
+            dest.chmod(dest.stat().st_mode | 0o111)
+        actions.append({"path": rel_path, "action": "overwritten" if existed else "written"})
+
+    return {"root": str(root), "diff": diff, "force": force, "actions": actions}
 
 
 def init_corpus(root: pathlib.Path | str, tools: Iterable[str] | None = None) -> dict:
