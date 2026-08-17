@@ -163,8 +163,61 @@ def test_anthropic_count_tokens_mocked(monkeypatch):
     assert cost.anthropic_count_tokens("hello", "claude-sonnet-4-6") == 42
 
 
+def test_anthropic_count_tokens_no_credential_names_both_remediations(monkeypatch):
+    """RULING-279 s4: the exact failure mode measured this session — unset
+    ANTHROPIC_API_KEY, no `ant` on PATH, call anthropic_count_tokens. The old bare
+    "ANTHROPIC_API_KEY not set" message named only the symptom. The fix must name
+    BOTH remediation paths (set the env var; install+auth `ant`), not a bare
+    "not set" — so a caller in a live Claude Code session (this tool's most common
+    execution context, per the ruling) has an actual next step.
+    """
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    with pytest.raises(RuntimeError) as ei:
+        cost.anthropic_count_tokens("hello", "claude-sonnet-4-6")
+    msg = str(ei.value)
+    assert "ANTHROPIC_API_KEY" in msg
+    assert "ant" in msg and "auth login" in msg
+    assert "--api-key-env" in msg
+
+
+def test_anthropic_count_tokens_respects_api_key_env_override(monkeypatch):
+    """--api-key-env <VARNAME>: a caller whose credential lives under a non-default
+    env var name is not stuck (RULING-279 s5's narrow fix, not full ant-CLI
+    precedence-chain resolution)."""
+
+    class _Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return b'{"input_tokens": 7}'
+
+    def fake_urlopen(req, timeout=30.0):
+        return _Resp()
+
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("MY_CUSTOM_KEY", "test-key")
+    monkeypatch.setattr(cost.urllib.request, "urlopen", fake_urlopen)
+    n = cost.anthropic_count_tokens("hello", "claude-sonnet-4-6", api_key_env="MY_CUSTOM_KEY")
+    assert n == 7
+
+    # And with neither the default nor the custom var set, it still fails loudly
+    # naming the custom var name it actually checked (not a hardcoded default).
+    monkeypatch.delenv("MY_CUSTOM_KEY", raising=False)
+    with pytest.raises(RuntimeError) as ei:
+        cost.anthropic_count_tokens("hello", "claude-sonnet-4-6", api_key_env="MY_CUSTOM_KEY")
+    assert "MY_CUSTOM_KEY" in str(ei.value)
+
+
 def test_calibrate_ratio_mocked(monkeypatch):
-    monkeypatch.setattr(cost, "anthropic_count_tokens", lambda text, model, api_key=None: 200)
+    monkeypatch.setattr(
+        cost,
+        "anthropic_count_tokens",
+        lambda text, model, api_key=None, api_key_env="ANTHROPIC_API_KEY": 200,
+    )
     monkeypatch.setattr(cost, "estimate_tokens_local", lambda text: 100)
     r = cost.calibrate_ratio(["abc", "def"], "test-model")
     assert r == pytest.approx(2.0)

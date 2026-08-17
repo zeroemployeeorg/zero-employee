@@ -31,6 +31,7 @@ from .core import (
     restaufwand,
     kosten,
     waste_report,
+    nutzwertanalyse,
 )
 from .cost import (
     UnknownModelError,
@@ -369,6 +370,75 @@ def _triage(root) -> int:
         f"RESTING - done, not your attention: {len(resting)} streams "
         f"(still-working DRAFT/DESIGN/PROGRESS: {len(working)})"
     )
+    return 0
+
+
+def _priority(root, *, top_n=3, near_m=3, json_out=False) -> int:
+    """RULING-279: rank every OPEN/PAUSED/BLOCKED stream by Nutzwertanalyse and name
+    what a Master session would fund next AND what it would trade off (s3
+    Opportunitätskosten — a ranking that shows only the winner hides the decision's
+    real cost). Tokens throughout, never currency, per the ruling's own instruction.
+
+    Deliberately a SEPARATE verb from --triage (RULING-279 s5 leans this way: triage
+    stays the fast unopinionated read, priority is the considered one you consult
+    deliberately — this does not change --triage's own sort order).
+    """
+    out = nutzwertanalyse(root)
+    ranked = out["ranked"]
+    if json_out:
+        import json as _json
+
+        payload = {
+            "kind": "nutzwertanalyse",
+            "weights": out["criteria"].get("weights", {}),
+            "funded": ranked[:top_n],
+            "near_miss": ranked[top_n : top_n + near_m],
+            "honesty": "Nutzwert = weighted(Dringlichkeit,Impact,Risiko) / Restaufwand_tokens; "
+            "ESTIMATE tokens, never currency",
+        }
+        print(_json.dumps(payload, indent=2, default=str))
+        return 0
+
+    if not ranked:
+        print("NUTZWERTANALYSE - no OPEN/PAUSED/BLOCKED stream to rank.")
+        return 0
+
+    print(f"NUTZWERTANALYSE (RULING-279) - {len(ranked)} rankable stream(s)")
+    w = out["criteria"].get("weights", {})
+    print(
+        "  Nutzwert = ({:.2f}*Dringlichkeit + {:.2f}*Impact + {:.2f}*Risiko) / Restaufwand_tokens "
+        "(first-cut weights, RULING-279 s5 - revisable)".format(
+            w.get("dringlichkeit", 0), w.get("impact", 0), w.get("risiko", 0)
+        )
+    )
+    print("")
+    funded = ranked[:top_n]
+    near_miss = ranked[top_n : top_n + near_m]
+    print(f"FUNDED - top {len(funded)} for the next session's tokens:")
+    for i, r in enumerate(funded, 1):
+        print(
+            "  {}. {:<28} nutzwert={:.6f}  dringlichkeit={}d  impact={}  risiko={}  restaufwand~{:.0f}tok [{}]".format(
+                i,
+                r["stream"],
+                r["nutzwert"],
+                int(r["dringlichkeit_days"]),
+                int(r["impact_count"]),
+                int(r["risiko_count"]),
+                r["restaufwand_tokens"],
+                r["restaufwand_estimate_kind"],
+            )
+        )
+    print("")
+    print(
+        f"OPPORTUNITÄTSKOSTEN - next {len(near_miss)} near-miss stream(s), NOT funded this round "
+        "(RULING-279 s3: the ranking's real cost, stated not implied):"
+    )
+    if not near_miss:
+        print("  (none - fewer than top_n+near_m rankable streams)")
+    last_funded_score = funded[-1]["nutzwert"] if funded else 0.0
+    for i, r in enumerate(near_miss, 1):
+        delta = last_funded_score - r["nutzwert"]
+        print("  {}. {:<28} nutzwert={:.6f}  delta-to-last-funded=-{:.6f}".format(i, r["stream"], r["nutzwert"], delta))
     return 0
 
 
@@ -914,6 +984,14 @@ OPTIONS
                      that `binds:` and requested_by's <stream>#<n> form resolve through.
   --inbox <stream>   A stream's own view: what it's waiting on, what was ruled for it.
   --triage           The operator worklist: whom do I help today (six buckets).
+  --priority [path]  RULING-279: Nutzwertanalyse ranking of every OPEN/PAUSED/BLOCKED
+                     stream (Dringlichkeit/Impact/Restaufwand/Risiko, tokens only,
+                     never currency) - top-N funded + next-M near-miss with their
+                     Nutzwert delta (s3 opportunity cost, stated not implied). A
+                     SEPARATE verb from --triage by design (s5) - does not change
+                     --triage's own sort order.
+  --top <N>          Funded-stream count for --priority (default 3).
+  --near-miss <M>    Near-miss stream count for --priority (default 3).
   --commit-check     At the commit path: a ghost requested_by is an ERROR, not a WARN
                      (doctrine - gate the future; landed ghosts stay WARN).
   --commit-check-corpus [path]
@@ -969,7 +1047,13 @@ OPTIONS
                      Token estimator for --kosten/--repo-cost (default local=tiktoken
                      proxy). anthropic uses the free count_tokens endpoint (API key).
   --calibrate        With local estimator: sample fixed-tax files via Anthropic and
-                     scale the walk by the ratio (needs ANTHROPIC_API_KEY).
+                     scale the walk by the ratio (needs an Anthropic API credential).
+  --api-key-env <VARNAME>
+                     Env var name to read the Anthropic API key from for
+                     --count-via anthropic / --calibrate (default ANTHROPIC_API_KEY).
+                     RULING-279 s4/s5: a narrow escape hatch for a credential under a
+                     non-default variable name — NOT full ant-CLI-equivalent
+                     credential-chain resolution, which is out of scope.
   --json             Machine-readable JSON for --repo-cost / --session-cost / --kosten.
   --model <id>       Rate-table model for cost verbs (default from model_rates.toml);
                      also the claimant model tag for --migrate.
@@ -2306,6 +2390,7 @@ def main(argv: list[str] | None = None) -> int:
     cost_log_path = None
     append_cost_log_path = None
     count_via = "local"
+    api_key_env = "ANTHROPIC_API_KEY"
     want_calibrate = False
     want_json = False
     repair_project = None
@@ -2320,6 +2405,9 @@ def main(argv: list[str] | None = None) -> int:
     skill_path = None
     board = False
     triage = False
+    priority = False
+    priority_top_n = 3
+    priority_near_m = 3
     commit_check_corpus = False
     ruling_index = False
     mint_kind = None
@@ -2379,6 +2467,15 @@ def main(argv: list[str] | None = None) -> int:
         elif args[i] == "--triage":
             triage = True
             i += 1
+        elif args[i] == "--priority":
+            priority = True
+            i += 1
+        elif args[i] == "--top" and i + 1 < len(args):
+            priority_top_n = int(args[i + 1])
+            i += 2
+        elif args[i] == "--near-miss" and i + 1 < len(args):
+            priority_near_m = int(args[i + 1])
+            i += 2
         elif args[i] == "--stream-index":
             stream_index = True
             i += 1
@@ -2429,6 +2526,9 @@ def main(argv: list[str] | None = None) -> int:
             i += 2
         elif args[i] == "--count-via" and i + 1 < len(args):
             count_via = args[i + 1]
+            i += 2
+        elif args[i] == "--api-key-env" and i + 1 < len(args):
+            api_key_env = args[i + 1]
             i += 2
         elif args[i] == "--calibrate":
             want_calibrate = True
@@ -2589,6 +2689,7 @@ def main(argv: list[str] | None = None) -> int:
                 model=rates["model"],
                 calibrate=use_calibrate,
                 calibrate_samples=samples,
+                api_key_env=api_key_env,
             )
         except Exception as e:
             print(f"zeo --kosten: estimator failed: {e}", file=sys.stderr)
@@ -2678,6 +2779,7 @@ def main(argv: list[str] | None = None) -> int:
                 model=rates["model"],
                 calibrate=calibrate,
                 calibrate_samples=samples,
+                api_key_env=api_key_env,
             )
         except Exception as e:
             print(f"zeo --repo-cost: estimator failed: {e}", file=sys.stderr)
@@ -3092,6 +3194,7 @@ def main(argv: list[str] | None = None) -> int:
         board
         or inbox_stream
         or triage
+        or priority
         or commit_check_corpus
         or ruling_index
         or mint_kind
@@ -3131,6 +3234,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if triage:
         return _triage(root)
+    if priority:
+        return _priority(root, top_n=priority_top_n, near_m=priority_near_m, json_out=want_json)
     if board:
         return _board(root)
     if commit_check_corpus:
