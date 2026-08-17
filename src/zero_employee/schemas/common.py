@@ -44,6 +44,10 @@ CHARTER_STATUS_ENUM = frozenset({"ACTIVE", "SUPERSEDED", "DONE", "VOIDED"})
 RULING_STATUS_PREFIXES = ("ACTIVE", "AMENDED", "SUPERSEDED", "VOIDED")
 LEARNINGS_KINDS = frozenset({"craft", "gotcha", "doctrine-candidate"})
 
+# RULING-268 s1: open_questions[].status is exactly two values, no third state, no free
+# text — the ruling is explicit that a looser shape is not a permitted simplification.
+OPEN_QUESTION_STATUSES = frozenset({"OPEN", "RESOLVED"})
+
 # Presence-check smell: runnable but proves import/existence, not behavior.
 _PRESENCE_CHECK_RE = re.compile(
     r"""(?ix)

@@ -699,6 +699,7 @@ _MIGRATE_REQUIRED = [
 ]
 # Single source of truth: schemas.common.STATUS_ENUM (shared with migrate).
 from .schemas.common import STATUS_ENUM as _STATUS_ENUM_FROZEN  # noqa: E402
+from .schemas.common import OPEN_QUESTION_STATUSES  # noqa: E402
 
 _STATUS_ENUM = set(_STATUS_ENUM_FROZEN)
 
@@ -1897,6 +1898,10 @@ def _split_requesters(rb):
 
 _STREAM_N_RE = re.compile(r"^([A-Za-z0-9][A-Za-z0-9_-]*)#(\d+)$")
 _PATH_WITH_REASON_RE = re.compile(r"^([A-Za-z0-9_./-]+\.md)(?:\s*\((.+)\))?$")
+# RULING-268 s1: <stream>#<n>#<question-id> extends the already-ruled <stream>#<n> form
+# (RULING-214 s3) one level finer, not a new scheme. question-id is "kebab-ish" per the
+# ruling's own worked example (q1-seat) — word chars plus hyphens, no further punctuation.
+_STREAM_N_QID_RE = re.compile(r"^([A-Za-z0-9][A-Za-z0-9_-]*)#(\d+)#([A-Za-z0-9][A-Za-z0-9_-]*)$")
 
 
 def check_requested_by(fm, raw_text, known_stems, sow_index=None):
@@ -2122,6 +2127,101 @@ def check_ruling_receipts(files_fm, root, commit_mode=False, sow_index=None, ste
             if commit_mode:
                 finding = Finding(ERROR, finding.code, finding.message)
             out[path].append(finding)
+    return dict(out)
+
+
+def _find_open_question(target_fm, qid):
+    """Look up one row of target_fm['open_questions'] by id. Returns the row dict or
+    None (missing field, non-list shape, or no row with that id — all three are ONE
+    ghost outcome for the caller; check_resolves.open_questions_messages already
+    caught a malformed list on the OWNING file's own lint pass, this is not where
+    that gets re-reported)."""
+    oq = target_fm.get("open_questions")
+    if not isinstance(oq, list):
+        return None
+    for row in oq:
+        if isinstance(row, dict) and str(row.get("id") or "").strip() == qid:
+            return row
+    return None
+
+
+def check_resolves(files_fm, root, commit_mode=False, sow_index=None):
+    """RULING-268 s1/s4 item 2: teach `resolves:` the `<stream>#<n>#<question-id>` form,
+    the fine-grained sibling of `check_ruling_receipts`'s whole-file `requested_by`/
+    `resolved_by` pair. Same shape, one level finer:
+      - a `resolves:` entry that isn't <stream>#<n>#<question-id> or bare <stream>#<n>
+        (RULING-268 s1: a bare stream#n citation resolves EVERY open question the file
+        carries — backward-compat with the pre-existing whole-file form, not an error)
+        is left alone here (check_requested_by's / check_resolved_by's problem, not
+        this one — this function only grades entries that use the NEW field).
+      - a #<question-id> suffix naming a stream/n that doesn't resolve, or a question
+        id that doesn't exist on the resolved target's open_questions: list, is a ghost
+        citation — same fail-closed posture as check_requested_by's stream-n ghost.
+      - the closure-lands-together rule (RULING-268 s1, mirroring RULING-214 s2 applied
+        one grain finer): a `resolves:` entry naming a real question whose OWN row on
+        the target file is not `status: RESOLVED` is flagged — the citing document and
+        the closed row must land in the same commit, exactly like check_ruling_receipts
+        already enforces for whole-SOW ruling receipts.
+
+    `files_fm` supplies the citing documents (a ruling, or a SOW's own resolves: on a
+    later rev); resolution against the wider corpus is via `sow_index` (same corpus-wide
+    index check_ruling_receipts already builds — reuse it, don't rebuild).
+    """
+    if sow_index is None:
+        sow_index = build_sow_n_index(root)
+    out = defaultdict(list)
+    for path, fm in files_fm:
+        if not isinstance(fm, dict):
+            continue
+        resolves = fm.get("resolves")
+        if not resolves:
+            continue
+        if not isinstance(resolves, list):
+            out[path].append(
+                Finding(WARN if not commit_mode else ERROR, "resolves-shape", "resolves: is present but not a list")
+            )
+            continue
+        for entry in resolves:
+            e = str(entry or "").strip()
+            m = _STREAM_N_QID_RE.match(e)
+            if not m:
+                continue  # bare stream#n or a legacy form: not this function's grain
+            stream, n, qid = m.group(1), int(m.group(2)), m.group(3)
+            hit = sow_index.get((stream, n))
+            if hit is None:
+                out[path].append(
+                    Finding(
+                        WARN if not commit_mode else ERROR,
+                        "resolves-ghost-stream-n",
+                        f"resolves: names '{e}' — no SOW on disk declares sow: {stream} at n: {n}",
+                    )
+                )
+                continue
+            target_path, target_fm = hit
+            row = _find_open_question(target_fm, qid)
+            if row is None:
+                out[path].append(
+                    Finding(
+                        WARN if not commit_mode else ERROR,
+                        "resolves-ghost-question-id",
+                        f"resolves: names '{e}' — {stream}#{n} carries no open_questions: row "
+                        f"with id '{qid}' (target: {pathlib.Path(target_path).name})",
+                    )
+                )
+                continue
+            row_status = str(row.get("status") or "").strip().upper()
+            if row_status != "RESOLVED":
+                out[path].append(
+                    Finding(
+                        WARN,
+                        "resolves-missing-landed-closure",
+                        f"resolves: names '{e}' but that question's own row on "
+                        f"{pathlib.Path(target_path).name} is still status: "
+                        f"{row.get('status')!r} — RULING-268 s1's lands-together rule "
+                        "(RULING-214 s2 one grain finer) means the citation and the "
+                        "target row's status:RESOLVED flip land in the SAME commit",
+                    )
+                )
     return dict(out)
 
 
@@ -4002,6 +4102,44 @@ def _pad(n):
 
 
 _RESOLVE_ROOT = [None]
+
+
+def open_questions_summary(fm):
+    """RULING-268 s1 / charter Phase 1 item 3: per-file rollup of open_questions: rows.
+
+    Returns None when the field is absent or not a list (additive — a file with zero
+    open_questions: rows is untouched by this, byte-identical to pre-field behavior).
+    Otherwise returns a dict {tag, resolved, total} where tag is one of:
+      OPEN       — every row status: OPEN (m resolved out of m is 0)
+      RESOLVED   — every row status: RESOLVED
+      PARTIAL    — a genuine mix, reported as "PARTIAL (n/m)" by the caller
+    A row with a status outside {OPEN, RESOLVED} (the open_questions_messages shape
+    lint already ERRORs on this at the owning file's own grade_sow pass) counts toward
+    neither bucket here — this function summarizes, it does not re-validate shape.
+    """
+    oq = fm.get("open_questions")
+    if not isinstance(oq, list) or not oq:
+        return None
+    resolved = 0
+    total = 0
+    for row in oq:
+        if not isinstance(row, dict):
+            continue
+        st = str(row.get("status") or "").strip().upper()
+        if st not in OPEN_QUESTION_STATUSES:
+            continue
+        total += 1
+        if st == "RESOLVED":
+            resolved += 1
+    if total == 0:
+        return None
+    if resolved == 0:
+        tag = "OPEN"
+    elif resolved == total:
+        tag = "RESOLVED"
+    else:
+        tag = "PARTIAL"
+    return {"tag": tag, "resolved": resolved, "total": total}
 
 
 def awaiting_ruling(files_fm, root=None):

@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, field_validator
 
 from .common import (
     LIFECYCLES,
+    OPEN_QUESTION_STATUSES,
     STATUS_ENUM,
     STATUS_WORKING,
     normalize_status,
@@ -25,6 +26,23 @@ class LedgerEntry(BaseModel):
     gate: str | None = None
 
 
+class OpenQuestionEntry(BaseModel):
+    """RULING-268 s1: a ledger-shaped, per-question closure row.
+
+    `extra='ignore'` deliberately mirrors LedgerEntry — an unknown sibling field on a
+    row (e.g. an author's own note) must not fail the whole file; only the four named
+    fields are graded (§ open_questions_messages below carries the actual shape gate:
+    missing id, unknown status, duplicate id).
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: str | None = None
+    claim: str | None = None
+    status: str | None = None
+    resolved_by: str | None = None
+
+
 class SowFrontmatter(BaseModel):
     """Read-side SOW model. Extra fields ignored so the live corpus stays gradeable."""
 
@@ -37,6 +55,7 @@ class SowFrontmatter(BaseModel):
     status: Any = None
     lifecycle: Any = None
     ledger: list[Any] | None = None
+    open_questions: list[Any] | None = None
     done_when: Any = None
     restaufwand: Any = None
     project: Any = None
@@ -113,6 +132,51 @@ def keystone_messages(fm: dict) -> list[str]:
     return findings
 
 
+def open_questions_messages(fm: dict) -> list[str]:
+    """RULING-268 s1 shape gate for `open_questions:` — a lint FAIL, not a silent skip
+    (charter Phase 1 item 1 is explicit: the ruling is exact about the shape and a
+    looser accept-anything parse is not a permitted simplification because it was
+    easier to write). Absent field: legal, no messages (additive — RULING-268 s2's
+    no-backfill rule means the ~1000+ files with no open_questions: must stay silent).
+
+    Three defects, all ERROR-worthy per the charter:
+      - missing `id:` on a row
+      - `status:` outside {OPEN, RESOLVED} (no third state, no free text — s1 verbatim)
+      - duplicate `id:` within one file (an id must be citable unambiguously by
+        <stream>#<n>#<question-id>; two rows sharing an id make that address ambiguous)
+    """
+    findings: list[str] = []
+    oq = fm.get("open_questions")
+    if oq is None:
+        return []
+    if not isinstance(oq, list):
+        return ["open_questions: is present but not a list"]
+    seen_ids: set[str] = set()
+    for idx, entry in enumerate(oq):
+        if not isinstance(entry, dict):
+            findings.append(f"open_questions[{idx}] is not a mapping")
+            continue
+        qid = entry.get("id")
+        if not qid or not str(qid).strip():
+            findings.append(f"open_questions[{idx}] has no id: (required — it is the citation target)")
+        else:
+            qid_s = str(qid).strip()
+            if qid_s in seen_ids:
+                findings.append(
+                    f"open_questions[{idx}] id '{qid_s}' duplicates an earlier row in this file "
+                    "— ids must be unique within a file to be citable as <stream>#<n>#<question-id>"
+                )
+            seen_ids.add(qid_s)
+        status = entry.get("status")
+        status_s = str(status or "").strip().upper()
+        if status_s not in OPEN_QUESTION_STATUSES:
+            findings.append(
+                f"open_questions[{idx}] status '{status}' is not OPEN or RESOLVED "
+                "(RULING-268 s1: exactly two values, no third state, no free text)"
+            )
+    return findings
+
+
 def grade_sow(
     fm: dict,
     *,
@@ -173,6 +237,9 @@ def grade_sow(
 
     for msg in keystone_messages(fm):
         out.append(Finding(ERROR, "keystone", msg))
+
+    for msg in open_questions_messages(fm):
+        out.append(Finding(ERROR, "open-questions-shape", msg))
 
     # Working fields (doctrine) — same severity policy as check_working_fields.
     st = normalize_status(fm.get("status"))
