@@ -3175,22 +3175,124 @@ def _nwa_minmax_norm(values_by_stream):
 
 
 def _nwa_citation_graph(root):
-    """Corpus-wide: for every stream, which OTHER streams cite it via `requested_by:`
-    (Impact — what this stream unblocks) and which streams currently RULING-REQUESTED
-    trace their ask back to it (Risiko — delay compounds onto dependents).
+    """Corpus-wide, per RULING-281 (superseding the original RULING-279 design):
+    for every stream S, which OTHER streams does S's OWN ruling-request history
+    affect (Impact), and which of those are THEMSELVES currently blocked on an
+    open ruling-request (Risiko).
 
-    Reuses the existing `<stream>#<n>` / bare-path citation forms this corpus already
-    parses for `check_requested_by` (`_split_requesters`, `_STREAM_N_RE`) rather than
-    inventing a second citation grammar — RULING-279 s2's own design intent (no new
-    per-stream bookkeeping) and this charter's s4 instruction (extend, don't duplicate).
+    RULING-281 background: PRIORITY-NWA-SOW-3 measured the original mechanism
+    (walk SOW `requested_by:` for `<stream>#<n>` forms) covered only ~6% of real
+    requested_by: citations corpus-wide — near-silent, every stream tied. RULING-281
+    ruled the fix: read `binds:` on RULINGS a stream's own requests produced — a
+    structured YAML list already required on every ruling, ~6.7x the coverage, no
+    new citation grammar needed.
 
-    Returns {target_stream: {"cited_by": set[str], "blocking_open_requests": int}}.
+    THE NEW COMPUTATION (RULING-281 s1-3):
+      for each ruling file:
+        citer = resolve requested_by: to the asking stream (reusing the SAME
+            <stream>#<n> / path-form resolution check_ruling_receipts already
+            uses — build_sow_n_index / build_stem_index — not a new resolver)
+        if citer is None: continue  (unresolvable / operator-form / no requested_by)
+        for target in ruling's own binds: list:
+            skip role words (all-streams/master/sparring/ds-6 — RULING-281 s2)
+            skip targets that don't resolve to a real stream dir (build_stream_index)
+            skip target == citer (a ruling binding its own asker back is not
+                Impact on some OTHER stream)
+            graph[citer]["cited_by"].add(target)
+        if target is currently RULING-REQUESTED with an open question
+            (awaiting_ruling(), unchanged): graph[citer]["blocking_open_requests"] += 1
+
+    DIRECTION FLIP FROM THE ORIGINAL CODE (PRIORITY-NWA-SOW-4 s1's own warning,
+    read carefully before touching this): the OLD graph was keyed by
+    `target_stream` — "who cites ME." This graph is keyed by `citer` — "what did
+    MY OWN asks affect." Impact(S) is now "what stream S's own requests produced,"
+    not "who mentions stream S." Getting this backwards would still look plausible
+    (numbers, ranking, everything runs) while silently measuring the wrong stream.
+
+    RULING-281 s4 (this stream's decision, not silently defaulted — PRIORITY-NWA-
+    SOW-4 done_when item 5): the OLD `<stream>#<n>` SOW-level `requested_by:` form
+    is KEPT, not removed — as a documented SECONDARY signal, additive under
+    `cited_by_legacy`, never merged into the primary `cited_by` set. It is real,
+    if rare, information (the 27 files PRIORITY-NWA-SOW-3 measured did not stop
+    being true), and now that binds: supplies ~6.7x the primary coverage, the
+    legacy form can no longer dominate or mask the signal the way it did when it
+    was the ONLY source. Impact/Risiko are computed from `cited_by` only —
+    `cited_by_legacy` is exposed for a caller that wants the secondary view, not
+    folded into the ranked criteria (folding it in would partially resurrect the
+    near-silent proxy RULING-281 replaced it for).
+
+    Returns {citer_stream: {"cited_by": set[str], "cited_by_legacy": set[str],
+    "blocking_open_requests": int}}.
     """
     root = pathlib.Path(root).resolve()
-    graph: dict[str, dict[str, Any]] = defaultdict(lambda: {"cited_by": set(), "blocking_open_requests": 0})
+    graph: dict[str, dict[str, Any]] = defaultdict(
+        lambda: {"cited_by": set(), "cited_by_legacy": set(), "blocking_open_requests": 0}
+    )
+
+    files_fm = []
+    for f in iter_sow_files(root):
+        fm = extract_frontmatter(f.read_text(encoding="utf-8", errors="replace"))
+        if isinstance(fm, dict):
+            files_fm.append((str(f), fm))
+
+    sow_index = build_sow_n_index(root)
+    stem_index = build_stem_index(root)
+    stream_index = build_stream_index(root)
+    aw = awaiting_ruling(files_fm, root=root)
+    open_streams = {q["stream"] for q in aw if not q.get("answered") and not q.get("resolved")}
+
+    def _resolves_to_real_stream(tok):
+        e = stream_index.get(tok)
+        return e is not None and e.get("path") is not None and not e.get("ambiguous")
+
+    # ── Primary signal (RULING-281 s1-3): ruling requested_by: -> binds: ──
+    for path, fm in files_fm:
+        if discriminate(path, fm) != "ruling":
+            continue
+        rb = str(fm.get("requested_by", "") or "").strip()
+        if not rb or any(f in rb.lower() for f in _OPERATOR_FORMS):
+            continue
+        citer_sid = None
+        for entry in _split_requesters(rb):
+            sm = _STREAM_N_RE.match(entry)
+            pm = _PATH_WITH_REASON_RE.match(entry)
+            if sm:
+                key = (sm.group(1), int(sm.group(2)))
+                hit = sow_index.get(key)
+                if hit:
+                    citer_sid = str(hit[1].get("sow") or sm.group(1))
+                    break
+            elif pm:
+                stem = pathlib.Path(pm.group(1)).stem
+                hit = stem_index.get(stem)
+                if hit:
+                    citer_sid = str(hit[1].get("sow") or pathlib.Path(pm.group(1)).parent.name)
+                    break
+        if citer_sid is None:
+            continue  # unresolvable asker — check_requested_by's ghost problem, not this one
+
+        binds = fm.get("binds") or []
+        if isinstance(binds, str):
+            binds = [t.strip() for t in re.split(r"[,\n]", binds) if t.strip()]
+        for target in binds:
+            tok = str(target).strip()
+            if not tok:
+                continue
+            if tok in _ROLE_TOKENS or tok in ("all-streams", "ds-6") or tok.startswith("all-"):
+                continue  # RULING-281 s2: role words carry no per-stream Impact signal
+            if not _resolves_to_real_stream(tok):
+                continue
+            if tok == citer_sid:
+                continue  # a ruling binding its own asker back is not Impact on some OTHER stream
+            graph[citer_sid]["cited_by"].add(tok)
+            if tok in open_streams:
+                graph[citer_sid]["blocking_open_requests"] += 1
+
+    # ── Secondary signal (RULING-281 s4, decided not silently defaulted): the
+    # original SOW-level <stream>#<n> requested_by: form, kept for visibility,
+    # never merged into the primary Impact/Risiko count. ──
     for sow_dir in find_sow_roots(root):
         for d in sorted(x for x in sow_dir.iterdir() if x.is_dir()):
-            citer_sid = d.name
             for f in sorted(d.glob("*.md")):
                 fm = extract_frontmatter(f.read_text(encoding="utf-8", errors="replace"))
                 if not isinstance(fm, dict):
@@ -3199,7 +3301,6 @@ def _nwa_citation_graph(root):
                 rb = str(fm.get("requested_by", "") or "").strip()
                 if not rb:
                     continue
-                is_open_request = str(fm.get("status", "")).upper().startswith("RULING-REQUESTED")
                 for entry in _split_requesters(rb):
                     m = _STREAM_N_RE.match(entry) or _STREAM_N_QID_RE.match(entry)
                     target_sid = None
@@ -3208,22 +3309,18 @@ def _nwa_citation_graph(root):
                     else:
                         m2 = _PATH_WITH_REASON_RE.match(entry)
                         if m2:
-                            # A bare path citation: resolve to its owning stream dir name
-                            # (the same fallback locate_stream/board_rows use for
-                            # pre-schema targets with no declared sow: field).
                             target_sid = pathlib.Path(m2.group(1)).parent.name or None
                     if not target_sid or target_sid == citer_sid:
                         continue
-                    graph[target_sid]["cited_by"].add(citer_sid)
-                    if is_open_request:
-                        graph[target_sid]["blocking_open_requests"] += 1
+                    graph[target_sid]["cited_by_legacy"].add(citer_sid)
     return graph
 
 
 def nutzwertanalyse(root, *, estimate=None, today=None):
-    """RULING-279 s2: rank every OPEN/PAUSED/BLOCKED stream by a four-criterion
-    weighted Nutzwert (utility value), so Master has a stated, revisable reason for
-    which stream gets the next session's tokens instead of age alone.
+    """RULING-279 s2 (Impact/Risiko source rebuilt per RULING-281): rank every
+    OPEN/PAUSED/BLOCKED stream by a four-criterion weighted Nutzwert (utility
+    value), so Master has a stated, revisable reason for which stream gets the
+    next session's tokens instead of age alone.
 
         Nutzwert = (0.30*Dringlichkeit_norm + 0.30*Impact_norm + 0.15*Risiko_norm)
                    / Restaufwand_tokens
@@ -3249,14 +3346,23 @@ def nutzwertanalyse(root, *, estimate=None, today=None):
                        / RULING-279 s5's open question, it still RANKS, using the corpus
                        median restaufwand-tokens as a last-resort denominator, flagged
                        ESTIMATE-LOCAL-MEDIAN.
-      Impact         - count of OTHER streams whose requested_by: cites this stream
-                       (_nwa_citation_graph, extending check_requested_by's own citation
-                       grammar rather than a new one), plus a flat bonus if the stream's
-                       own issue_first: field is explicitly true (touches the operator's
-                       production critical path per CLAUDE.md's own standing law).
-      Risiko         - count of the citing streams (above) that are THEMSELVES currently
-                       RULING-REQUESTED with an open question - i.e. streams actually
-                       blocked waiting on this one, not just historically related.
+      Impact         - RULING-281 (superseding RULING-279's original citation-graph
+                       design after PRIORITY-NWA-SOW-3 measured it near-silent, ~6%
+                       corpus coverage): count of OTHER real streams named in the
+                       `binds:` list of every RULING whose `requested_by:` traces back
+                       to THIS stream's own ask (_nwa_citation_graph, ~6.7x the old
+                       coverage, no new citation grammar - binds: is already a
+                       structured YAML list on every ruling). Role-word binds:
+                       entries (all-streams/master/sparring/ds-6) are filtered - they
+                       carry no per-stream signal (RULING-281 s2). Plus a flat bonus
+                       if the stream's own issue_first: field is explicitly true
+                       (touches the operator's production critical path per
+                       CLAUDE.md's own standing law).
+      Risiko         - count of Impact's own bound-stream set (above) that are
+                       THEMSELVES currently RULING-REQUESTED with an open question -
+                       i.e. streams actually blocked waiting on a ruling THIS stream's
+                       ask produced (RULING-281 s3 - same intent as the original
+                       RULING-279 s2 design, sourced from the corrected Impact set).
 
     `estimate` is an optional callable(text)->int (default cost.estimate_tokens_local,
     same default as kosten()/restaufwand()). This function never calls
@@ -3312,7 +3418,7 @@ def nutzwertanalyse(root, *, estimate=None, today=None):
     risiko_raw = {}
     for r in rankable:
         sid = r["stream"]
-        g = graph.get(sid, {"cited_by": set(), "blocking_open_requests": 0})
+        g = graph.get(sid, {"cited_by": set(), "cited_by_legacy": set(), "blocking_open_requests": 0})
         impact_raw[sid] = float(len(g["cited_by"])) + (1.0 if issue_first_by_stream.get(sid) else 0.0)
         risiko_raw[sid] = float(g["blocking_open_requests"])
 
