@@ -47,6 +47,32 @@
 - Intake status vocabulary: `OPEN|PROMOTED|DUPLICATE|REJECTED|PARKED` (legacy
   `CHARTERED|DECLINED|SUPERSEDED` accepted as aliases on read).
 
+### Fixed
+- **`--spec -|<path>` crashed with a raw traceback on malformed input** across all
+  four call sites (`sow new`, `intake new`, `intake propose`, `intake promote`).
+  Now fails the same clean way everywhere: bad JSON, missing file, or
+  valid-JSON-but-not-an-object.
+- **`DoneWhenItem` accepted a `type`/field mismatch silently**, rendering the
+  literal string `` `None` → exit 0 `` into a shipped SOW body when a
+  `type: "command"` item only set `criterion`. Now rejected at validation time
+  with a message naming the likely intended fix.
+- **`restaufwand()` crashed on an n-collision** (`revs.sort()` compared tuples
+  with a `rest` field that could be `int` or `None`); now sorts by revision
+  number only.
+- **`_triage`'s `needs_master` count could show a stream with 0 open questions**
+  when its `status` field was stale but its actual open question was already
+  resolved; now derived from the same already-correct open-question list
+  `--triage` prints, not a separate raw status scan.
+- Flaky `test_digest_matches_the_real_bash_script_on_the_same_commit_range`:
+  the bash and Python digest header each stamp their own independent
+  timestamp a subprocess apart, occasionally differing by a minute
+  (`07:18` vs `07:19`) and failing the byte-identical comparison. Test now
+  normalizes the header timestamp out before comparing, the same way it
+  already normalizes ruling-citation differences.
+- `make setup`'s dev-dependency install was a silent no-op (`--python` +
+  unknown-extra fallback never triggered under `uv`); now installs the
+  `dev` dependency group explicitly.
+
 ## [0.1.4] - 2026-08-09
 
 ### Added
