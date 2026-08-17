@@ -125,6 +125,26 @@ def test_py_typed_marker_ships_so_the_typed_classifier_is_actually_true(built_wh
     assert "zero_employee/py.typed" in built_wheel_members
 
 
+def test_zeo_stream_template_does_not_cite_the_nonexistent_boot_little_claude():
+    """Regression guard for a real, live bug shipped in v0.1.7 through v0.3.1: the
+    stream seat template's @import list named `roles/BOOT-LITTLE-CLAUDE.md`, a file
+    that has never existed under that name in any corpus this tool's doctrine came
+    from -- the real file is `roles/BOOT-SUBAGENT.md`. `zeroemployeeorg/org`'s own
+    canonical CLAUDE.md already corrected this exact ghost-precedent IN PROSE on
+    2026-08-16 (`claude-md/CLAUDE.md` names it explicitly), but the shipped package
+    template that `zeo equip` actually writes into every work repo was never updated
+    to match -- so every `zeo equip` since kept carrying the stale reference forward,
+    silently: `scaffold.py`'s missing-import handling degrades to a
+    `<!-- @import missing: ... -->` comment rather than an error, so a booting stream
+    seat got a quietly doctrine-less boot instead of a loud failure. MEASURED live:
+    found while equipping a brand-new org (ducktyper-ai/org, 2026-08-17) and
+    confirmed by grep against this exact file before this test existed."""
+    path = _REPO_ROOT / "src" / "zero_employee" / "scaffold_templates" / "agents" / "zeo-stream.md"
+    text = path.read_text(encoding="utf-8")
+    assert "BOOT-LITTLE-CLAUDE" not in text, "the stream template must not cite the nonexistent BOOT-LITTLE-CLAUDE.md"
+    assert "@roles/BOOT-SUBAGENT.md" in text, "the stream template must import the real file, BOOT-SUBAGENT.md"
+
+
 def test_claude_settings_template_is_no_longer_the_empty_stub():
     """Regression guard for the charter's own headline finding.
 

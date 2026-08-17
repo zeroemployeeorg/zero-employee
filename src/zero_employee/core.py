@@ -4058,6 +4058,115 @@ def check_binds_corpus(files_fm, root, commit_mode=False, index=None):
     return dict(out)
 
 
+def _binds_tokens(fm):
+    binds = fm.get("binds") or []
+    if isinstance(binds, str):
+        return [t.strip() for t in re.split(r"[,\n]", binds) if t.strip()]
+    return [str(t).strip() for t in binds]
+
+
+def _stream_cites_ruling(files_fm, stream, nnn):
+    """Doctrine's own receipt mechanic ("the stream's next SOW cites RULING-NNN —
+    that citation IS the receipt"), read literally: does ANY file this stream
+    authored (`sow:` == stream, case-insensitive) contain the literal string
+    `RULING-<nnn>` anywhere in its own bytes (frontmatter or prose — a citation in
+    prose is still a citation; doctrine draws no distinction the way it does for
+    `requested_by`, which is a structured field with its own stricter rule).
+    Zero-padding tolerant: RULING-4 and RULING-004 both match ruling 4.
+    """
+    want = str(nnn).lstrip("0") or "0"
+    pat = re.compile(r"RULING-0*" + re.escape(want) + r"\b")
+    for path, fm in files_fm:
+        if not isinstance(fm, dict):
+            continue
+        if str(fm.get("sow") or "").strip().lower() != stream.lower():
+            continue
+        try:
+            text = pathlib.Path(path).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if pat.search(text):
+            return True
+    return False
+
+
+def binding_rulings_for_stream(files_fm, stream, root, index=None):
+    """Every LANDED ruling that BINDS this stream — whether or not this stream ever
+    asked a question. `--inbox` alone cannot see this: it is built exclusively from
+    `awaiting_ruling()`, a question -> answer channel keyed on a SOW's own
+    `status: RULING-REQUESTED` and a ruling's `requested_by` citing that SOW back.
+    A ruling can bind a stream PROACTIVELY via `binds:` (a direct stream id, or the
+    `all-streams` roster) with NO `requested_by:` naming this stream at all — Master
+    ruling something fleet-wide, nobody having asked. That ruling is real, in force,
+    and binding, and until this function existed no verb ever surfaced it to the
+    bound stream: a stream with an empty question history had an empty inbox by
+    construction, no matter what actually bound it. MEASURED live (ducktyper-ai/org,
+    2026-08-17): a fresh Master read `--inbox`'s own doctrine literally and concluded
+    correctly that the tool's relay duty was structurally unmet, not merely quiet.
+
+    Only ACTIVE/AMENDED rulings count (a SUPERSEDED/VOIDED ruling does not bind).
+    `all-streams` and other role words carry no per-stream targeting signal by
+    themselves — EVERY stream matches `all-streams` directly, without needing
+    `build_stream_index` resolution at all; a specific stream id still resolves
+    through the index exactly as `check_binds` already does, so a typo'd or
+    ambiguous `binds:` entry is silently skipped here (that is `check_binds`'s
+    finding to raise at lint time, not this function's to re-litigate at read time).
+
+    Returns a list of dicts, newest `updated:` first:
+      {"ruling": nnn, "title": str, "path": str, "updated": str,
+       "acknowledged": bool}
+    `acknowledged` is True iff `_stream_cites_ruling` finds this stream citing the
+    ruling back anywhere in its own SOW chain — the same "citation is the receipt"
+    doctrine every other closure in this corpus already uses, applied here for the
+    first time to a ruling nobody asked for.
+    """
+    if index is None:
+        index = build_stream_index(root)
+    stream_l = stream.lower()
+    out = []
+    for path, fm in files_fm:
+        if not isinstance(fm, dict):
+            continue
+        if discriminate(path, fm) != "ruling":
+            continue
+        status = str(fm.get("status", "")).upper()
+        if status not in ("ACTIVE", "AMENDED"):
+            continue
+        toks = _binds_tokens(fm)
+        if not toks:
+            continue
+        hit = False
+        for tok in toks:
+            if tok.lower() in ("all-streams",):
+                hit = True
+                break
+            if tok.lower() == stream_l:
+                hit = True
+                break
+            e = index.get(tok)
+            if e is not None and e.get("path") is not None and not e.get("ambiguous"):
+                # resolves to a real, DIFFERENT stream's directory — not a match
+                # unless that stream IS this one, already caught above.
+                continue
+        if not hit:
+            continue
+        m = _RULING_NAME_RE.match(pathlib.Path(path).name)
+        nnn = m.group(1) if m else str(fm.get("ruling") or "").strip()
+        if not nnn:
+            continue
+        out.append(
+            {
+                "ruling": nnn,
+                "title": str(fm.get("title") or "").strip(),
+                "path": str(path),
+                "updated": str(fm.get("updated", "?")),
+                "acknowledged": _stream_cites_ruling(files_fm, stream, nnn),
+            }
+        )
+    out.sort(key=lambda r: r["updated"], reverse=True)
+    return out
+
+
 def ungraded_streams(sow_root):
     # A directory holding .md files of which NONE carry frontmatter is pre-schema
     # legacy: invisible to the projection. It gets a row saying so, never silence.

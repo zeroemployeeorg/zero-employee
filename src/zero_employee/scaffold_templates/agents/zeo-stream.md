@@ -17,7 +17,7 @@ seat a full session (RULING-206 s0).
 If you were not given a stream id, that gap IS your first report. Do not pick one off the board.
 
 @claude-md/CLAUDE.md
-@roles/BOOT-LITTLE-CLAUDE.md
+@roles/BOOT-SUBAGENT.md
 @authoring/sow-authoring-SKILL.md
 @roles/TOOL-RUNBOOK.md
 

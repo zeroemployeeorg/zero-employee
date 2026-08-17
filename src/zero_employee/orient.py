@@ -1090,7 +1090,7 @@ See also: zeo new  ·  zeo doctor  ·  zeo help --all
 """,
     "rulings": """ZEO HELP · rulings
 
-  zeo --inbox <stream>             Open questions + answering rulings
+  zeo --inbox <stream>             Open questions + answering rulings + proactive binding rulings
   zeo mint ruling                  Next free org-scope ruling id
   zeo index rulings                Regenerate ruling-index.md
   zeo --mint ruling                Legacy flag form

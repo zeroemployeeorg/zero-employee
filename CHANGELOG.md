@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.3.2] - 2026-08-17
+
+### Fixed
+- **`--inbox <stream>` could not deliver a proactive, fleet-binding ruling.** It was
+  built entirely from `awaiting_ruling()` — a question-answer channel keyed on a
+  stream's own `status: RULING-REQUESTED` and a ruling's `requested_by` citing that
+  SOW back. A ruling that binds via `binds: [all-streams]` (or a direct stream id)
+  with no `requested_by:` naming the stream at all — Master ruling something
+  fleet-wide, nobody having asked — was real, in force, and binding, and was
+  invisible to that stream's inbox by construction. MEASURED live: a Master boot in
+  a real corpus (ducktyper-ai/org) read `--inbox`'s own doctrine literally and
+  correctly reported the tool's relay duty as structurally unmet, not merely quiet;
+  reproducing the report against the real corpus surfaced two real, previously
+  undelivered rulings. Added `binding_rulings_for_stream()` (reuses the existing
+  `binds:` resolution machinery `check_binds`/`build_stream_index` already provided)
+  and a new BINDING RULINGS section in `--inbox`'s output: every ACTIVE/AMENDED
+  ruling binding this stream, asked or not, with ACKNOWLEDGED/NOT-YET-CITED per the
+  corpus's own existing "citation is the receipt" doctrine — no new ack field
+  invented. `--triage` is intentionally unchanged (a different question: what does
+  Master owe, not what binds a stream); whether it should also surface unacknowledged
+  fleet rulings is a separate, open question.
+- **The shipped `zeo-stream.md` agent template referenced a file that has never
+  existed: `roles/BOOT-LITTLE-CLAUDE.md`.** The real file is `roles/BOOT-SUBAGENT.md`
+  — `zeroemployeeorg/org`'s own canonical `CLAUDE.md` already corrected this exact
+  ghost-precedent in prose on 2026-08-16, but the package template `zeo equip`
+  actually writes into every work repo was never updated to match, so every
+  `zeo equip` since v0.1.7 carried the stale reference forward. A missing `@import`
+  degrades to a silent HTML comment rather than an error, so a booting stream seat
+  got a quietly doctrine-less boot instead of a loud failure. Fixed; added a
+  regression test (falsified first — confirmed it fails against the old content).
+
 ## [0.3.1] - 2026-08-17
 
 ### Fixed

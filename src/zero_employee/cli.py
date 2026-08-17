@@ -32,6 +32,7 @@ from .core import (
     kosten,
     waste_report,
     nutzwertanalyse,
+    binding_rulings_for_stream,
 )
 from .cost import (
     UnknownModelError,
@@ -311,6 +312,25 @@ def _inbox(root, stream) -> int:
         label = f"{tag} ({summary['resolved']}/{summary['total']})"
         print(f"  {label:<14} {pathlib.Path(path).name}")
     if not oq_rows:
+        print("  (none)")
+    print("")
+    # BINDING RULINGS: the gap MEASURED live in ducktyper-ai/org (2026-08-17) — a
+    # fresh Master read --inbox's own doctrine literally ("built only from SOWs that
+    # asked a question") and correctly concluded the tool's relay duty was
+    # structurally unmet for a PROACTIVE fleet-binding ruling (`binds: [all-streams]`
+    # or a direct stream id, no `requested_by:` naming this stream at all — nobody
+    # asked, Master just ruled). Everything above this line answers "what did I ask
+    # and did it get answered." This section answers a DIFFERENT question: "what
+    # binds me that I never asked about." Same receipt doctrine as the rest of this
+    # corpus (citation is the receipt) — NOT-YET-CITED is not a fault on its own,
+    # it is the honest state of a binding ruling this stream has not yet acted on.
+    binding = binding_rulings_for_stream(files_fm, stream, root)
+    print("BINDING RULINGS (bind you via `binds:` — asked or not; cite one in your next SOW to acknowledge):")
+    for r in binding:
+        tag = "ACKNOWLEDGED" if r["acknowledged"] else "NOT-YET-CITED"
+        title = f" — {r['title']}" if r["title"] else ""
+        print(f"  RULING-{r['ruling']:<5} {tag:<14} ({r['updated']})   {pathlib.Path(r['path']).name}{title}")
+    if not binding:
         print("  (none)")
     return 0
 
@@ -1033,7 +1053,8 @@ OPTIONS
   --board            Regenerate local STATE.md (gitignored) from every SOW's frontmatter.
   --stream-index     Regenerate local stream-index.md (gitignored; doctrine) - id-to-path map
                      that `binds:` and requested_by's <stream>#<n> form resolve through.
-  --inbox <stream>   A stream's own view: what it's waiting on, what was ruled for it.
+  --inbox <stream>   A stream's own view: what it's waiting on, what was ruled for it,
+                     AND what proactively binds it via `binds:` whether it asked or not.
   --triage           The operator worklist: whom do I help today (six buckets).
   --priority [path]  RULING-279: Nutzwertanalyse ranking of every OPEN/PAUSED/BLOCKED
                      stream (Dringlichkeit/Impact/Restaufwand/Risiko, tokens only,
