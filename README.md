@@ -98,6 +98,7 @@ ZEO_SOWS_ROOT=/path/to/corpus zeo triage
 | `zeo doctor PATH` / `--changed` | Actionable readiness check for one SOW (or git-changed files). |
 | `zeo scaffold <project> <stream>` | Greenfield wrapper: project `CLAUDE.md` + `sow new`. |
 | `zeo bridges [flags]` | Install/resync IDE and agent bridges into an existing repository. |
+| `zeo equip <repo> [--force\|--diff]` | Install `.claude/` (settings, trunk-guard hook, agents) + `CLAUDE.md` into a work repo; never clobbers by default. |
 | `zeo --board` | Regenerate the local fleet state board (`STATE.md`, gitignored). |
 | `zeo --stream-index` | Regenerate local `stream-index.md` (gitignored). |
 | `zeo --triage` | Display operator worklist (open questions, held streams, unread rulings). |

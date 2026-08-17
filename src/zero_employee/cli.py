@@ -53,6 +53,7 @@ from .hooks import (
     warn_tracked_boards,
 )
 from .scaffold import (
+    equip_repo,
     init_corpus,
     install_bridges,
     parse_tool_flags,
@@ -990,6 +991,9 @@ USAGE
   zeo bridges [path] --cursor|--gemini|--claude|--agents|--all
                                   Install/refresh selected IDE/agent bridges only.
                                   Distinct from --resync-* (doctrine SHA sync).
+  zeo equip <repo> [--force|--diff]
+                                  Install .claude/ (settings, trunk-guard hook, agents)
+                                  + CLAUDE.md into a work repo. Never clobbers by default.
   zeo --inbox <stream> [path]
                                   Show ONE stream's open questions + rulings that answered it.
                                   Path optional - run it from anywhere: zeo --inbox example-stream
@@ -1075,6 +1079,8 @@ OPTIONS
                      Scaffold a project workstream SOW (Rev 17); bridges opt-in.
   bridges [path] --cursor|--gemini|--claude|--agents|--all
                      Install selected IDE/agent bridges (not doctrine --resync-*).
+  equip <repo> [--force|--diff]
+                     Install .claude/ + CLAUDE.md ALWAYS-tier files. Never clobbers by default.
   --kosten [stream]   Corpus artifact token ESTIMATE + DERIVED USD (fixed tax, SOWs,
                      rulings, waste). Session tokens are NOT here — use --session-cost.
   --repo-cost [path] Ahead-of-work: estimate tokens in a repo/tree and DERIVE USD at
@@ -1479,6 +1485,48 @@ def _cmd_bridges(argv: list[str]) -> int:
     for act in info.get("actions", []):
         print(f"  {act['action']}: {act['path']}")
     return 0
+
+
+def _cmd_equip(argv: list[str]) -> int:
+    """REPO-EQUIP-SOW-5 (step 2 of REPO-EQUIP-SOW-1): `zeo equip <repo>`.
+
+    Installs the ALWAYS-tier .claude/ + CLAUDE.md files into a work repo.
+    Never clobbers by default; `--force` overwrites; `--diff` previews only.
+    --gates / override layer / --resync-check visibility / --all are NOT
+    built here -- steps 3-6 of the charter, out of scope for this verb today.
+    """
+    force = "--force" in argv
+    show_diff = "--diff" in argv
+    if force and show_diff:
+        print("zeo equip: --force and --diff are mutually exclusive", file=sys.stderr)
+        return 2
+    positionals = [a for a in argv if not str(a).startswith("-")]
+    target = pathlib.Path(positionals[0]).resolve() if positionals else pathlib.Path(".").resolve()
+    if not target.is_dir():
+        print(f"zeo equip: not a directory: {target}", file=sys.stderr)
+        return 2
+
+    info = equip_repo(target, force=force, diff=show_diff)
+    label = "DIFF" if show_diff else "EQUIP"
+    print(f"{label}: {info['root']}")
+    exit_code = 0
+    for act in info["actions"]:
+        action = act["action"]
+        if show_diff:
+            if action == "would-create":
+                print(f"  would create: {act['path']}")
+                exit_code = exit_code or 1
+            elif action == "would-change":
+                print(f"  would change: {act['path']}")
+                diff_text = act.get("diff") or ""
+                for line in diff_text.splitlines():
+                    print(f"    {line}")
+                exit_code = exit_code or 1
+            else:
+                print(f"  unchanged: {act['path']}")
+        else:
+            print(f"  {action}: {act['path']}")
+    return exit_code
 
 
 def _parse_sow_flags(argv: list[str]) -> tuple[list[str], dict]:
@@ -2417,6 +2465,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_scaffold(args[1:])
     if args and args[0] == "bridges":
         return _cmd_bridges(args[1:])
+    if args and args[0] == "equip":
+        return _cmd_equip(args[1:])
     if args and args[0] == "sow":
         return _cmd_sow(args[1:])
     if args and args[0] == "intake":
