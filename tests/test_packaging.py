@@ -114,6 +114,17 @@ def test_the_new_trunk_guard_hook_specifically_ships(built_wheel_members):
     assert "zero_employee/scaffold_templates/claude-hooks/check-trunk-guard.sh" in built_wheel_members
 
 
+def test_py_typed_marker_ships_so_the_typed_classifier_is_actually_true(built_wheel_members):
+    """`pyproject.toml`'s classifiers claim `"Typing :: Typed"`, and the README badges
+    that claim too -- but a classifier is metadata a type checker never reads. What a
+    type checker (mypy/pyright) actually looks for is `zero_employee/py.typed` inside
+    the installed package; without it, every downstream user importing this package
+    silently gets untyped stubs regardless of what PyPI's page says. MEASURED before
+    this test existed: the marker file was absent from `src/`, so the classifier was
+    already false. This is the guarantee that stays true going forward."""
+    assert "zero_employee/py.typed" in built_wheel_members
+
+
 def test_claude_settings_template_is_no_longer_the_empty_stub():
     """Regression guard for the charter's own headline finding.
 

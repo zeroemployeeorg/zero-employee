@@ -1,28 +1,49 @@
 <div align="center">
 
-Portable governance tooling for Statement-of-Work (SOW) corpora. Install the package, point it at a corpus, and use the `zeo` CLI (the `zeo` command is retained as a permanent alias).
+# zero-employee
 
-**Portable, deterministic governance tooling and AI agent orchestration for Statement-of-Work (SOW) corpora.**
+**Deterministic governance tooling for multi-agent software organizations.**
 
+Schema-validated Statements of Work, cost tracking in tokens (not currency), fleet-wide
+state boards, and IDE/agent bridge synchronization — enforced by a linter, not a wiki page.
+
+[![CI](https://github.com/zeroemployeeorg/zero-employee/actions/workflows/ci.yml/badge.svg)](https://github.com/zeroemployeeorg/zero-employee/actions/workflows/ci.yml)
 [![PyPI version](https://img.shields.io/pypi/v/zero-employee.svg?color=blue)](https://pypi.org/project/zero-employee/)
 [![Python Version](https://img.shields.io/pypi/pyversions/zero-employee.svg)](https://pypi.org/project/zero-employee/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
+[![Typed](https://img.shields.io/badge/typing-typed-blue.svg)](https://peps.python.org/pep-0561/)
 
-[Website](https://zeroemployee.org) • [Documentation](https://zeroemployee.org/docs) • [Issues](https://github.com/zeroemployeeorg/zero-employee/issues)
+[Website](https://zeroemployee.org) • [Documentation](https://zeroemployee.org/docs) • [Tutorial](docs/tutorial.md) • [Issues](https://github.com/zeroemployeeorg/zero-employee/issues)
 
 </div>
 
 ---
 
-## Overview
+## Why this exists
 
-`zero-employee` (`zeo`) is the governance layer and linter for multi-agent software organizations. It enforces deterministic schema validation, cost tracking, state board generation, and IDE/agent bridge synchronization across your entire repository fleet.
+Multi-agent development produces a lot of work fast, and almost no durable record of *why*
+any of it happened. A chat transcript is not an audit trail. A README that says "we do code
+review" is not enforcement. `zero-employee` (`zeo`) makes the governance layer a **linter**,
+not a policy document — every claim a stream makes about its own status, cost, and
+dependencies is schema-checked before it's trusted, the same way `mypy` doesn't trust a
+docstring over the type it contradicts.
+
+- **Deterministic SOW linting.** Strict frontmatter schemas (`sow:`, `n:`, `status:`,
+  `restaufwand:`, `done_when:`) validated on every commit, not sampled after the fact.
+- **Cost in tokens, not dollars.** `--session-cost` / `--repo-cost` / `--kosten` track LLM
+  spend against live rate cards; `--priority` ranks work with a stated, revisable formula
+  instead of "whatever's loudest."
+- **A fleet state board**, regenerated locally on demand (`zeo --board`), never committed —
+  the board is a view over the corpus, not a second source of truth to drift from the first.
+- **Zero-clutter scaffolding.** IDE and agent bridges (`--cursor`, `--gemini`, `--claude`,
+  `--agents`) are opt-in; a fresh `zeo init` doesn't litter a repo with tool config nobody
+  asked for.
 
 ```
               ┌─────────────────────────────────┐
-              │       GOVERNANCE DOCTRINE       │
-              │       (CLAUDE.md / Rulings)     │
+              │       GOVERNANCE DOCTRINE        │
+              │       (CLAUDE.md / Rulings)      │
               └────────────────┬────────────────┘
                                │
            RULINGS             │  ▲  SOWs
@@ -30,16 +51,23 @@ Portable governance tooling for Statement-of-Work (SOW) corpora. Install the pac
         Mandates & Precedents  │  │ Status & Deliverables
                                ▼  │
               ┌────────────────┴────────────────┐
-              │       PROJECT WORKSTREAMS       │
-              │    (projects/<repo>/sow/...)    │
+              │       PROJECT WORKSTREAMS        │
+              │    (projects/<repo>/sow/...)     │
               └─────────────────────────────────┘
 ```
 
-### Key Features
-* **Deterministic SOW Linting:** Enforces strict frontmatter schemas (`sow:`, `n:`, `status:`, `restaufwand:`, `done_when:`).
-* **Zero-Clutter Scaffolding:** Clean-by-default repository and workstream generation with opt-in IDE bridges (`--cursor`, `--gemini`, `--claude`, `--agents`).
-* **Cost & Token Proxies:** Real-time token tracking (`--session-cost`, `--repo-cost`) with live rate cards.
-* **Fleet State Board (`STATE.md`):** Local navigation board of active streams, open questions, and held workstreams (gitignored — regenerate with `zeo --board`, never commit).
+## Table of contents
+
+- [Installation](#installation)
+- [Quick start](#quick-start)
+- [Command reference](#command-reference)
+- [Stream priority (Nutzwertanalyse)](#stream-priority-nutzwertanalyse)
+- [Modular IDE & agent scaffolding](#modular-ide-agent-scaffolding)
+- [`zeo equip` — overriding the shipped templates](#zeo-equip-overriding-the-shipped-templates)
+- [Local development & testing](#local-development-testing)
+- [Documentation & resources](#documentation-resources)
+- [Contributing](#contributing)
+- [License & community](#license-community)
 
 ---
 
@@ -55,11 +83,11 @@ uv tool install zero-employee
 pip install zero-employee
 ```
 
-> **Requirements:** Python 3.11 or higher.
+> **Requirements:** Python 3.11+. The only CLI entry point is `zeo`.
 
 ---
 
-## Quick Start
+## Quick start
 
 > **Want the real, worked walkthrough instead of a flag list?** See the [Tutorial](docs/tutorial.md) — every command in it was actually run and its real output is shown.
 
@@ -80,18 +108,18 @@ zeo board /path/to/corpus
 ZEO_SOWS_ROOT=/path/to/corpus zeo triage
 ```
 
-*If no corpus is found, `zeo` still orients you (suggests `zeo init`) and exits zero—it never hallucinates a board.*
+*If no corpus is found, `zeo` still orients you (suggests `zeo init`) and exits zero — it never hallucinates a board.*
 
 ---
 
-## Command Reference
+## Command reference
 
 | Command / Flag | Purpose |
 | --- | --- |
 | `zeo init [path]` | Scaffold corpus marker + `CLAUDE.md` (`@import`). Bridges are opt-in. |
 | `zeo sow new <project> <stream> --title "..."` | Create a valid Rev-17 SOW without writing YAML. |
-| `zeo sow set` / `add` / `remove` | Mutate frontmatter fields safely (ZEO re-serializes YAML). |
-| `zeo sow draft ...` | Ollama collaborative body draft; ZEO owns frontmatter. |
+| `zeo sow set` / `add` / `remove` | Mutate frontmatter fields safely (`zeo` re-serializes YAML). |
+| `zeo sow draft ...` | Ollama collaborative body draft; `zeo` owns frontmatter. |
 | `zeo intake "…"` / `new` | Frictionless intent capture (no YAML; status OPEN). |
 | `zeo intake mission` / `propose` / `promote` | Coding-agent protocol: investigate → grounded proposal → SOW. |
 | `zeo sow from-intake FILE` | Lower-level alias for `zeo intake promote`. |
@@ -99,6 +127,7 @@ ZEO_SOWS_ROOT=/path/to/corpus zeo triage
 | `zeo scaffold <project> <stream>` | Greenfield wrapper: project `CLAUDE.md` + `sow new`. |
 | `zeo bridges [flags]` | Install/resync IDE and agent bridges into an existing repository. |
 | `zeo equip <repo> [--force\|--diff]` | Install `.claude/` (settings, trunk-guard hook, agents) + `CLAUDE.md` into a work repo; never clobbers by default. |
+| `zeo cold-start <repo> [--sows-root PATH]` | Bounded, mechanical Ist-Aufnahme survey for a freshly-equipped repo with no SOW/ruling history — writes one report, zero commits into the surveyed repo. |
 | `zeo --board` | Regenerate the local fleet state board (`STATE.md`, gitignored). |
 | `zeo --stream-index` | Regenerate local `stream-index.md` (gitignored). |
 | `zeo --triage` | Display operator worklist (open questions, held streams, unread rulings). |
@@ -111,7 +140,8 @@ ZEO_SOWS_ROOT=/path/to/corpus zeo triage
 | `zeo hooks pre-commit` | Pre-commit gate (unstage boards, regen locally, lint staged SOWs). |
 | `zeo <path>` | Lint a single SOW, ruling, or skill file against strict schema rules. |
 
-`zeo` accepts the same arguments as `zeo`.
+Run `zeo help --all` for the full, current list with flags — this table tracks the most-used
+verbs, not every one that exists.
 
 ---
 
@@ -137,9 +167,9 @@ changing set of streams, not a one-shot scoring pass.
 | Criterion | German term | Weight | What it measures | Where the number comes from |
 | --- | --- | --- | --- | --- |
 | Urgency | Dringlichkeit | 0.30 | Age (days) of the oldest OPEN, unanswered/unresolved question on the stream | `awaiting_ruling()`'s own `updated:` field — the same data `--triage`'s NEEDS MASTER bucket reads. Reused, not recomputed. |
-| Impact | Wesentlichkeit-gewichtetes Impact | 0.30 | How many OTHER streams cite this one via `requested_by:`, plus a bonus if `issue_first: true` | New: a corpus-wide citation-graph scan (`_nwa_citation_graph`) that extends the existing `requested_by` parsing rather than inventing a second citation grammar. |
+| Impact | Wesentlichkeit-gewichtetes Impact | 0.30 | How many OTHER streams cite this one via rulings' `binds:` field | A corpus-wide citation-graph scan (`_nwa_citation_graph`) reading the structured `binds:` list on rulings a stream's own requests produced. |
 | Cost | Restaufwand | 0.25 *(inverted — sits in the denominator)* | Remaining work in TOKENS, not percent-complete | The stream's own `restaufwand:` field (RULING-202 s3's own unit) converted to tokens via `kosten()`'s per-claim token average for that stream. |
-| Risk | Risiko | 0.15 | How many of the citing streams (above) are THEMSELVES currently `RULING-REQUESTED` and trace back to this one | New: the same citation-graph scan, counting only open, blocked dependents. |
+| Risk | Risiko | 0.15 | How many of the citing streams (above) are THEMSELVES currently `RULING-REQUESTED` and trace back to this one | The same citation-graph scan, counting only open, blocked dependents. |
 
 ```
 Nutzwert = (0.30 × Dringlichkeit_norm + 0.30 × Impact_norm + 0.15 × Risiko_norm)
@@ -198,7 +228,7 @@ different variable name use it, without a full credential-chain resolver.
 
 ---
 
-## Modular IDE & Agent Scaffolding
+## Modular IDE & agent scaffolding
 
 Scaffolding commands stay **clean by default** to avoid polluting repositories with unused tool directories. You explicitly pass flags to generate tool-specific bridges:
 
@@ -267,7 +297,7 @@ the shared `UPSTREAM-SHA:` regex the way the other files' stamps are.
 
 ---
 
-## Local Development & Testing
+## Local development & testing
 
 We use `uv` and `make` for deterministic, hermetic local builds:
 
@@ -283,20 +313,37 @@ make setup
 make verify
 ```
 
+`make verify` runs `ruff format --check`, `ruff check`, and the full pytest suite
+(790+ tests). This is the same gate CI runs on every push and pull request — a green
+`make verify` locally means CI will be green too, not a hopeful guess.
+
 ---
 
-## Documentation & Resources
+## Documentation & resources
 
 * [Tutorial](docs/tutorial.md) — A real, verified walkthrough: idea → grounded proposal → SOW → a design fork ruled and delivered → `--priority`. Start here if you want to see *why*, not just *what*.
 * [Getting Started Guide](docs/getting-started.md) — Step-by-step onboarding for new corpora.
 * [Release Process](docs/releasing.md) — Versioning, changelogs, and PyPI publishing.
+* [Changelog](CHANGELOG.md) — What shipped, release by release.
 * [Contributing Guidelines](CONTRIBUTING.md) — Code style, test expectations, and PR rules.
+* [Security Policy](SECURITY.md) — How to report a vulnerability.
+* [Code of Conduct](CODE_OF_CONDUCT.md) — Community standards for this project.
 
 ---
 
-## License & Community
+## Contributing
+
+Contributions are welcome — bug reports, documentation fixes, and pull requests alike.
+Start with [CONTRIBUTING.md](CONTRIBUTING.md) for the local setup, test conventions, and
+PR checklist. Every change needs a green `make verify` before review; the same gate runs
+in CI so there's no separate "it works on my machine" step.
+
+---
+
+## License & community
 
 Distributed under the terms of the [MIT License](LICENSE).
 
 * **Maintainer Email:** [zeroemployeeorg@dreamhuggers.com](mailto:zeroemployeeorg@dreamhuggers.com)
 * **Organization:** [Zero Employee Organizations](https://zeroemployee.org)
+* **Security issues:** see [SECURITY.md](SECURITY.md) — please do not open a public issue for a vulnerability.
