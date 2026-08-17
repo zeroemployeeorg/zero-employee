@@ -1,5 +1,6 @@
 """Nutzwertanalyse stream ranking (RULING-279, PRIORITY-NWA-SOW-1; rebuilt per
-RULING-279 -> PRIORITY-NWA-SOW-3 -> RULING-281 -> PRIORITY-NWA-SOW-4).
+RULING-279 -> PRIORITY-NWA-SOW-3 -> RULING-281 -> PRIORITY-NWA-SOW-4 ->
+RULING-282 -> PRIORITY-NWA-SOW-7).
 
 RULING-279 s2: rank every OPEN/PAUSED/BLOCKED stream on four weighted criteria
 (Dringlichkeit, Impact, Restaufwand-as-cost, Risiko) into a single Nutzwert, so
@@ -13,7 +14,15 @@ PRIORITY-NWA-SOW-3 MEASURED that the original Impact/Risiko source
 (every stream tied). RULING-281 ruled the fix: Impact/Risiko now read `binds:` on
 rulings a stream's OWN requests produced (~6.7x the coverage, a structured field,
 no new citation grammar) -- see `_nwa_citation_graph`'s docstring for the exact
-computation and the direction-flip warning (keyed by CITER now, not target)."""
+computation and the direction-flip warning (keyed by CITER now, not target).
+
+RULING-282 MEASURED that Impact's OTHER half -- a flat +1.0 bonus to impact_raw
+when a stream's `issue_first:` field was `true` -- was firing for 99.7% of the
+corpus (727/730 filings; it is `authoring/sow-authoring-SKILL.md`'s documented
+DEFAULT, not an exception marker), contributing zero real discrimination and
+diluting the one real, varied signal (the binds:-sourced citation-graph count).
+PRIORITY-NWA-SOW-7 dropped the bonus term entirely: impact_raw is now the
+citation-graph cited_by count, full stop."""
 
 import datetime
 
@@ -264,6 +273,79 @@ def test_a_stream_whose_own_asks_bind_more_streams_scores_higher_impact(tmp_path
     out = nutzwertanalyse(root)
     by_stream = {r["stream"]: r for r in out["ranked"]}
     assert by_stream["popular"]["impact_count"] > by_stream["lonely"]["impact_count"]
+
+
+def test_issue_first_bonus_dropped_zero_citations_scores_impact_zero_not_one(tmp_path):
+    """RULING-282 regression: issue_first: true used to add a flat +1.0 to
+    impact_raw regardless of real citation activity -- before this fix, a
+    stream with 0 real cited_by entries and issue_first: true would have
+    scored impact_raw == 1.0 (0 citations + the 1.0 bonus), same as a genuinely-
+    cited stream with 0 citations of its own and issue_first: false would have
+    scored impact_raw == 0.0. That collapsed discrimination: 99.7% of the real
+    corpus sets issue_first: true (it is the SKILL's documented default, not an
+    exception), so the bonus fired near-universally and added noise, not signal.
+    After the fix: impact_raw rests on the citation-graph count alone, so a
+    stream with issue_first: true and 0 real citations scores impact_raw == 0.0."""
+    root = _corpus(tmp_path)
+    _sow(root, "p", "no-citations-issue-first", 1, status="PROGRESS", issue_first=True)
+    out = nutzwertanalyse(root)
+    by_stream = {r["stream"]: r for r in out["ranked"]}
+    assert by_stream["no-citations-issue-first"]["impact_count"] == 0.0
+    assert out["criteria"]["impact_raw"]["no-citations-issue-first"] == 0.0
+
+
+def test_issue_first_true_with_real_citations_still_scores_by_citation_count_alone(tmp_path):
+    """Companion to the regression test above: a stream WITH real citation
+    activity (2 streams bound by a ruling its own request produced) still
+    scores impact_raw == 2.0 -- issue_first: true neither adds nor subtracts
+    anything now; the citation-graph count is the entire signal."""
+    root = _corpus(tmp_path)
+    _sow(root, "p", "cited-issue-first", 1, status="PROGRESS", issue_first=True)
+    _sow(root, "p", "dep-a", 1, status="PROGRESS")
+    _sow(root, "p", "dep-b", 1, status="PROGRESS")
+    _ruling(root, "291", requested_by="cited-issue-first#1", binds=["dep-a", "dep-b"])
+    out = nutzwertanalyse(root)
+    by_stream = {r["stream"]: r for r in out["ranked"]}
+    assert by_stream["cited-issue-first"]["impact_count"] == 2.0
+    assert out["criteria"]["impact_raw"]["cited-issue-first"] == 2.0
+
+
+def test_priority_ranking_no_longer_mass_ties_when_only_citation_counts_differ(tmp_path):
+    """The direct behavioral proof (charter s2 item 3, RULING-282's measured
+    failure reproduced small): three streams, all issue_first: true (matching
+    the corpus's 99.7% norm), identical restaufwand/dringlichkeit/risiko, but
+    DIFFERENT citation-graph counts (0, 1, 2 respectively). Before the fix,
+    the +1.0 issue_first bonus fired uniformly for all three and their
+    citation-count differences were the only real spread already -- but on the
+    live corpus this same shape produced a mass tie because Dringlichkeit and
+    Risiko were also 0 for every rankable stream, same as here. Confirm the
+    ranking now actually orders by the citation-count difference, distinctly,
+    not a tie."""
+    root = _corpus(tmp_path)
+    _sow(root, "p", "no-cites", 1, status="PROGRESS", restaufwand=5, issue_first=True, ledger_shipped=1)
+    _sow(root, "p", "one-cite", 1, status="PROGRESS", restaufwand=5, issue_first=True, ledger_shipped=1)
+    _sow(root, "p", "two-cites", 1, status="PROGRESS", restaufwand=5, issue_first=True, ledger_shipped=1)
+    _sow(root, "p", "dep-1", 1, status="PROGRESS")
+    _sow(root, "p", "dep-2", 1, status="PROGRESS")
+    _sow(root, "p", "dep-3", 1, status="PROGRESS")
+    _ruling(root, "292", requested_by="one-cite#1", binds=["dep-1"])
+    _ruling(root, "293", requested_by="two-cites#1", binds=["dep-2", "dep-3"])
+    out = nutzwertanalyse(root)
+    by_stream = {r["stream"]: r for r in out["ranked"]}
+    # impact counts distinctly ordered
+    assert by_stream["no-cites"]["impact_count"] == 0.0
+    assert by_stream["one-cite"]["impact_count"] == 1.0
+    assert by_stream["two-cites"]["impact_count"] == 2.0
+    # nutzwert itself is no longer a mass tie across these three
+    nutzwerts = {
+        by_stream["no-cites"]["nutzwert"],
+        by_stream["one-cite"]["nutzwert"],
+        by_stream["two-cites"]["nutzwert"],
+    }
+    assert len(nutzwerts) == 3
+    # and the ranking orders by that real difference, highest citation count first
+    order = [r["stream"] for r in out["ranked"] if r["stream"] in {"no-cites", "one-cite", "two-cites"}]
+    assert order == ["two-cites", "one-cite", "no-cites"]
 
 
 def test_no_restaufwand_at_all_still_ranks_flagged_estimate_local_median(tmp_path):

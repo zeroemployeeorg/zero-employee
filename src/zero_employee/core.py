@@ -3408,18 +3408,16 @@ def nutzwertanalyse(root, *, estimate=None, today=None):
         open_by_stream[q["stream"]] = max(open_by_stream.get(q["stream"], 0), age)
     dringlichkeit_raw = {r["stream"]: float(open_by_stream.get(r["stream"], 0)) for r in rankable}
 
-    # Impact / Risiko from the citation graph, plus the issue_first bonus.
-    issue_first_by_stream = {}
-    for path, fm in files_fm:
-        sid = str(fm.get("sow") or pathlib.Path(path).parent.name)
-        if str(fm.get("issue_first", "")).strip().lower() == "true":
-            issue_first_by_stream[sid] = True
+    # Impact / Risiko from the citation graph (RULING-282: the issue_first bonus
+    # was dropped -- 99.7% of the corpus carries issue_first: true, the SKILL's
+    # own documented default, so it discriminated nothing and only diluted the
+    # one real, varied signal here, the binds:-sourced citation-graph count).
     impact_raw = {}
     risiko_raw = {}
     for r in rankable:
         sid = r["stream"]
         g = graph.get(sid, {"cited_by": set(), "cited_by_legacy": set(), "blocking_open_requests": 0})
-        impact_raw[sid] = float(len(g["cited_by"])) + (1.0 if issue_first_by_stream.get(sid) else 0.0)
+        impact_raw[sid] = float(len(g["cited_by"]))
         risiko_raw[sid] = float(g["blocking_open_requests"])
 
     # Restaufwand -> tokens: declared remaining units x this stream's own tokens-per-claim
