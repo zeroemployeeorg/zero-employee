@@ -62,10 +62,11 @@ env: ## Create virtual environment using uv
 	@echo "${GREEN}✓ Virtual environment created in $(VENV_NAME)${RESET}"
 
 .PHONY: install
-install: ## Install zeo in editable mode
+install: ## Install zeo in editable mode, plus the dev dependency group
 	@echo "${BLUE}Installing zero-employee in editable mode...${RESET}"
 	@if [ ! -d "$(VENV_NAME)" ]; then $(MAKE) --no-print-directory env; fi
-	@$(UV) pip install -e ".[dev]" --python $(PYTHON) 2>/dev/null || $(UV) pip install -e . --python $(PYTHON)
+	@$(UV) pip install -e . --python $(PYTHON)
+	@$(UV) pip install --group dev --python $(PYTHON)
 	@echo "${GREEN}✓ zeo installed${RESET}"
 
 .PHONY: hooks
