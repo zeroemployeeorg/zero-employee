@@ -3220,7 +3220,7 @@ def _nwa_citation_graph(root):
     return graph
 
 
-def nutzwertanalyse(root, *, estimate=None, today=None, api_key_env="ANTHROPIC_API_KEY"):
+def nutzwertanalyse(root, *, estimate=None, today=None):
     """RULING-279 s2: rank every OPEN/PAUSED/BLOCKED stream by a four-criterion
     weighted Nutzwert (utility value), so Master has a stated, revisable reason for
     which stream gets the next session's tokens instead of age alone.
@@ -3259,10 +3259,12 @@ def nutzwertanalyse(root, *, estimate=None, today=None, api_key_env="ANTHROPIC_A
                        blocked waiting on this one, not just historically related.
 
     `estimate` is an optional callable(text)->int (default cost.estimate_tokens_local,
-    same default as kosten()/restaufwand()). `api_key_env` is accepted for interface
-    symmetry with the cost verbs but this function never calls anthropic_count_tokens
-    itself - Restaufwand tokens come from the LOCAL estimator via kosten(), per
-    PRIORITY-NWA-SOW-1's own scope (s3: no full anthropic-count-every-stream walk).
+    same default as kosten()/restaufwand()). This function never calls
+    anthropic_count_tokens itself - Restaufwand tokens come from the LOCAL estimator
+    via kosten(), per PRIORITY-NWA-SOW-1's own scope (s3: no full
+    anthropic-count-every-stream walk). Pass a calibrated estimator (see
+    cost.make_estimator) as `estimate` if a caller wants Anthropic-calibrated
+    Restaufwand tokens instead of the raw local proxy.
 
     Returns a dict: {"ranked": [...], "criteria": {...per-stream raw values...}}.
     Each ranked row carries `restaufwand_estimate_kind` in
