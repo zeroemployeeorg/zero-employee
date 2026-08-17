@@ -61,6 +61,8 @@ pip install zero-employee
 
 ## Quick Start
 
+> **Want the real, worked walkthrough instead of a flag list?** See the [Tutorial](docs/tutorial.md) — every command in it was actually run and its real output is shown.
+
 `zeo` discovers a corpus by walking up from the current directory looking for `claude-md/CLAUDE.md`. You can also set `ZEO_SOWS_ROOT` or pass an explicit path.
 
 ```bash
@@ -240,6 +242,7 @@ make verify
 
 ## Documentation & Resources
 
+* [Tutorial](docs/tutorial.md) — A real, verified walkthrough: idea → grounded proposal → SOW → a design fork ruled and delivered → `--priority`. Start here if you want to see *why*, not just *what*.
 * [Getting Started Guide](docs/getting-started.md) — Step-by-step onboarding for new corpora.
 * [Release Process](docs/releasing.md) — Versioning, changelogs, and PyPI publishing.
 * [Contributing Guidelines](CONTRIBUTING.md) — Code style, test expectations, and PR rules.
