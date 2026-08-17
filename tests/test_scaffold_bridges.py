@@ -39,8 +39,45 @@ def test_bridges_gemini_claude_agents(tmp_path):
     install_bridges(root, tools=["gemini", "claude", "agents"])
     assert (root / "GEMINI.md").exists()
     assert (root / ".claude" / "settings.json").is_file()
+    assert (root / ".claude" / "hooks" / "check-trunk-guard.sh").is_file()
     assert (root / ".agents" / "zeo-verifier.md").is_file()
     assert not (root / ".cursor").exists()
+
+
+def test_bridges_claude_settings_is_not_the_empty_stub(tmp_path):
+    """REPO-EQUIP-SOW-1 s4/s5 regression: `zeo init --claude` must hand out the
+    real deny list + trunk-guard wiring, not `{"permissions": {}}`."""
+    root = tmp_path / "r"
+    root.mkdir()
+    (root / "CLAUDE.md").write_text("# x\n", encoding="utf-8")
+    install_bridges(root, tools=["claude"])
+    settings_text = (root / ".claude" / "settings.json").read_text(encoding="utf-8")
+    assert settings_text.strip() != '{\n  "permissions": {}\n}'
+    assert "git reset --hard" in settings_text
+    assert "check-trunk-guard.sh" in settings_text
+
+
+def test_bridges_claude_trunk_guard_hook_is_executable(tmp_path):
+    root = tmp_path / "r"
+    root.mkdir()
+    (root / "CLAUDE.md").write_text("# x\n", encoding="utf-8")
+    install_bridges(root, tools=["claude"])
+    guard = root / ".claude" / "hooks" / "check-trunk-guard.sh"
+    assert guard.is_file()
+    assert guard.stat().st_mode & 0o111, "trunk-guard hook must be installed executable"
+
+
+def test_bridges_claude_trunk_guard_never_clobbers_existing(tmp_path):
+    """s3's never-clobber-by-default rule applies to the hook file too, not just settings.json."""
+    root = tmp_path / "r"
+    root.mkdir()
+    (root / "CLAUDE.md").write_text("# x\n", encoding="utf-8")
+    hooks_dir = root / ".claude" / "hooks"
+    hooks_dir.mkdir(parents=True)
+    custom = hooks_dir / "check-trunk-guard.sh"
+    custom.write_text("#!/usr/bin/env bash\n# CUSTOM\nexit 0\n", encoding="utf-8")
+    install_bridges(root, tools=["claude"])
+    assert custom.read_text(encoding="utf-8") == "#!/usr/bin/env bash\n# CUSTOM\nexit 0\n"
 
 
 def test_bridges_personas_not_overwritten(tmp_path):
