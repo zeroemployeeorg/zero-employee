@@ -969,7 +969,13 @@ OPTIONS
                      Token estimator for --kosten/--repo-cost (default local=tiktoken
                      proxy). anthropic uses the free count_tokens endpoint (API key).
   --calibrate        With local estimator: sample fixed-tax files via Anthropic and
-                     scale the walk by the ratio (needs ANTHROPIC_API_KEY).
+                     scale the walk by the ratio (needs an Anthropic API credential).
+  --api-key-env <VARNAME>
+                     Env var name to read the Anthropic API key from for
+                     --count-via anthropic / --calibrate (default ANTHROPIC_API_KEY).
+                     RULING-279 s4/s5: a narrow escape hatch for a credential under a
+                     non-default variable name — NOT full ant-CLI-equivalent
+                     credential-chain resolution, which is out of scope.
   --json             Machine-readable JSON for --repo-cost / --session-cost / --kosten.
   --model <id>       Rate-table model for cost verbs (default from model_rates.toml);
                      also the claimant model tag for --migrate.
@@ -2306,6 +2312,7 @@ def main(argv: list[str] | None = None) -> int:
     cost_log_path = None
     append_cost_log_path = None
     count_via = "local"
+    api_key_env = "ANTHROPIC_API_KEY"
     want_calibrate = False
     want_json = False
     repair_project = None
@@ -2429,6 +2436,9 @@ def main(argv: list[str] | None = None) -> int:
             i += 2
         elif args[i] == "--count-via" and i + 1 < len(args):
             count_via = args[i + 1]
+            i += 2
+        elif args[i] == "--api-key-env" and i + 1 < len(args):
+            api_key_env = args[i + 1]
             i += 2
         elif args[i] == "--calibrate":
             want_calibrate = True
@@ -2589,6 +2599,7 @@ def main(argv: list[str] | None = None) -> int:
                 model=rates["model"],
                 calibrate=use_calibrate,
                 calibrate_samples=samples,
+                api_key_env=api_key_env,
             )
         except Exception as e:
             print(f"zeo --kosten: estimator failed: {e}", file=sys.stderr)
@@ -2678,6 +2689,7 @@ def main(argv: list[str] | None = None) -> int:
                 model=rates["model"],
                 calibrate=calibrate,
                 calibrate_samples=samples,
+                api_key_env=api_key_env,
             )
         except Exception as e:
             print(f"zeo --repo-cost: estimator failed: {e}", file=sys.stderr)

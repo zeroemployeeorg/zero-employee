@@ -209,12 +209,41 @@ def anthropic_count_tokens(
     model: str,
     *,
     api_key: str | None = None,
+    api_key_env: str = "ANTHROPIC_API_KEY",
     timeout: float = 30.0,
 ) -> int:
-    """Call Anthropic's free POST /v1/messages/count_tokens. Raises on failure."""
-    key = api_key or os.environ.get("ANTHROPIC_API_KEY") or ""
+    """Call Anthropic's free POST /v1/messages/count_tokens. Raises on failure.
+
+    Credential resolution (RULING-279 s4/s5 — the NARROW fix, not a full `ant`-CLI-
+    equivalent precedence chain, which is explicitly out of scope): an explicit
+    `api_key` argument wins; else the env var named by `api_key_env` (default
+    ANTHROPIC_API_KEY, overridable via --api-key-env for a caller whose credential
+    lives under a different name).
+
+    MEASURED (RULING-279 s4): a live, genuinely-authenticated Claude Code session has
+    NO working path to this function by default — the session credential is not
+    exposed as ANTHROPIC_API_KEY in the shell environment, and the `ant` CLI (which
+    resolves the same chain the SDK does) is not installed. That is the default state
+    of this tool's most common execution context, not an edge case. The old bare
+    "ANTHROPIC_API_KEY not set" message named the symptom and nothing else; a caller
+    hitting it in that default context had no next step. This raises LOUDLY with both
+    remediation paths named, every time the credential is missing.
+    """
+    key = api_key or os.environ.get(api_key_env) or ""
     if not key:
-        raise RuntimeError("ANTHROPIC_API_KEY not set; cannot use --count-via anthropic")
+        raise RuntimeError(
+            f"no Anthropic API credential available for --count-via anthropic "
+            f"(checked env var {api_key_env}, which is unset or empty). This is the "
+            f"default state of a Claude Code session: the session's own credential is "
+            f"not exposed as an environment variable. Two remediation paths: "
+            f"(1) set {api_key_env} to a real Anthropic API key in this shell's "
+            f"environment, or (2) install and authenticate the `ant` CLI "
+            f"(`ant auth login`) and pass its resolved key via --api-key-env "
+            f"pointing at whatever variable you export it under. If your credential "
+            f"lives under a different variable name than {api_key_env}, pass "
+            f"--api-key-env <VARNAME>. (Full ant-CLI-equivalent credential-chain "
+            f"auto-resolution is out of scope here — RULING-279 s5.)"
+        )
     body = json.dumps(
         {
             "model": model,
@@ -250,6 +279,7 @@ def calibrate_ratio(
     model: str,
     *,
     api_key: str | None = None,
+    api_key_env: str = "ANTHROPIC_API_KEY",
     local_fn: EstimateFn | None = None,
 ) -> float:
     """claude_tokens / local_tokens over non-empty samples. Returns 1.0 if empty."""
@@ -262,7 +292,7 @@ def calibrate_ratio(
         lt = local_fn(text)
         if lt <= 0:
             continue
-        ct = anthropic_count_tokens(text, model, api_key=api_key)
+        ct = anthropic_count_tokens(text, model, api_key=api_key, api_key_env=api_key_env)
         local_sum += lt
         claude_sum += ct
     if local_sum <= 0:
@@ -277,26 +307,31 @@ def make_estimator(
     calibrate: bool = False,
     calibrate_samples: list[str] | None = None,
     api_key: str | None = None,
+    api_key_env: str = "ANTHROPIC_API_KEY",
 ) -> tuple[EstimateFn, str, float | None]:
     """Return (estimate_fn, label, calibration_ratio_or_None).
 
     count_via=local: tiktoken/chars, optionally scaled by Anthropic calibration ratio.
     count_via=anthropic: every call hits the API (only for small samples — caller must not
     walk a whole repo with this).
+
+    api_key_env (RULING-279 s4/s5): the env var name anthropic_count_tokens reads when
+    api_key is not passed explicitly — lets a caller whose credential lives under a
+    non-default variable name use it, without a full credential-chain resolver.
     """
     ratio: float | None = None
     if count_via == "anthropic":
         mid = model or load_rate_table()["default_model"]
 
         def _fn(text: str) -> int:
-            return anthropic_count_tokens(text, mid, api_key=api_key)
+            return anthropic_count_tokens(text, mid, api_key=api_key, api_key_env=api_key_env)
 
         return _fn, tokenizer_label("anthropic"), None
 
     if calibrate:
         samples = calibrate_samples or []
         mid = model or load_rate_table()["default_model"]
-        ratio = calibrate_ratio(samples, mid, api_key=api_key)
+        ratio = calibrate_ratio(samples, mid, api_key=api_key, api_key_env=api_key_env)
         r = ratio
 
         def _fn_cal(text: str) -> int:
