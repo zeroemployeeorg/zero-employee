@@ -123,3 +123,48 @@ def test_inbox_cli_prints_partial_fraction_for_mixed_file(tmp_path, capsys):
     out = capsys.readouterr().out
     assert rc == 0
     assert "PARTIAL (2/3)" in out, out
+
+
+def test_inbox_cli_prints_resolved_fraction_once_the_third_lands(tmp_path, capsys):
+    """Phase 2 fixture proof (charter Phase 2 item 2's own literal acceptance text):
+    once the SAME file's third question also flips to RESOLVED, --inbox must print
+    'RESOLVED (3/3)', not a bare 'RESOLVED' with no fraction. This exact string was
+    never asserted before Phase 2 — test_all_resolved_tag above only checked the
+    dict open_questions_summary returns, never the CLI's rendered line, and the
+    all-RESOLVED/all-OPEN cases were the untested half of the fraction logic."""
+    root = _sows_repo(tmp_path)
+    d = root / "p" / "sow" / "archive-arch"
+    d.mkdir(parents=True)
+    (d / "archive-arch-SOW-25-x.md").write_text(
+        "---\nsow: archive-arch\nn: 25\nstatus: SHIPPED\nupdated: 2026-08-16\n"
+        "done_when: x\nrestaufwand: 0\nopen_questions:\n"
+        "  - id: q1-seat\n    claim: a\n    status: RESOLVED\n    resolved_by: 'ruling: RULING-210'\n"
+        "  - id: q2-acceptance-test\n    claim: b\n    status: RESOLVED\n    resolved_by: 'ruling: RULING-259'\n"
+        "  - id: q3-queue-block\n    claim: c\n    status: RESOLVED\n    resolved_by: 'ruling: RULING-210'\n"
+        "---\n\nbody\n",
+        encoding="utf-8",
+    )
+    rc = cli.main(["--inbox", "archive-arch", str(root)])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "RESOLVED (3/3)" in out, out
+    assert "PARTIAL" not in out
+
+
+def test_inbox_cli_prints_open_fraction_for_all_open_file(tmp_path, capsys):
+    """The OPEN-tag sibling of the fix above: 'OPEN (0/2)', not a bare 'OPEN'."""
+    root = _sows_repo(tmp_path)
+    d = root / "p" / "sow" / "archive-arch"
+    d.mkdir(parents=True)
+    (d / "archive-arch-SOW-99-x.md").write_text(
+        "---\nsow: archive-arch\nn: 99\nstatus: RULING-REQUESTED\nupdated: 2026-08-16\n"
+        "done_when: x\nrestaufwand: 1\nopen_questions:\n"
+        "  - id: q1\n    claim: a\n    status: OPEN\n"
+        "  - id: q2\n    claim: b\n    status: OPEN\n"
+        "---\n\nbody\n",
+        encoding="utf-8",
+    )
+    rc = cli.main(["--inbox", "archive-arch", str(root)])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "OPEN (0/2)" in out, out
