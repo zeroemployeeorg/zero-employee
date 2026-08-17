@@ -269,7 +269,17 @@ def _triage(root) -> int:
 
     openq = [r for r in aw if not r.get("answered") and not r.get("resolved")]
     ans, suppressed = needs_successor(aw, rows)  # doctrine, MANDATED
-    needs_master = by_status("RULING-REQUESTED")
+    # MEASURED (this session, worldprops SOW-25): by_status("RULING-REQUESTED") counts
+    # every row whose status: STRING says RULING-REQUESTED, independent of whether
+    # awaiting_ruling() already found it answered/resolved. A stream whose status:
+    # field was never flipped after its own resolved_by landed showed up here with
+    # "1 streams, 0 open questions" printed together -- the stream-count and the
+    # question-list disagreed because they read two different signals. needs_master
+    # must be the set of STREAMS that actually own an unresolved openq row, not a
+    # raw status-string scan; a stream present in `rows` at RULING-REQUESTED but with
+    # every one of its questions already answered/resolved is not owed a ruling.
+    needs_master_streams = {q["stream"] for q in openq}
+    needs_master = [r for r in by_status("RULING-REQUESTED") if r["stream"] in needs_master_streams]
     paused = by_status("HELD", "HANDOVER")
     blocked = by_status("BLOCKED")
     dark_rows = by_status("UNKNOWN")

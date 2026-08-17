@@ -150,6 +150,56 @@ def test_the_banner_states_the_REAL_version_not_a_hardcoded_string(tmp_path, cap
     assert _ver and _ver in out
 
 
+def test_needs_master_stream_count_excludes_a_resolved_question(tmp_path, capsys):
+    """worldprops-SOW-25, measured live 2026-08-17: a stream's status: field stayed
+    RULING-REQUESTED after its own resolved_by (a valid, on-disk ruling citation)
+    already closed the question -- --inbox correctly showed 0 open, but --triage's
+    NEEDS MASTER line printed "1 streams, 0 open questions" together, because the
+    stream count came from a raw status-string scan (by_status) that never consulted
+    the same answered/resolved classification the open-question list uses. A stream
+    whose only RULING-REQUESTED row is already resolved must not appear in the
+    NEEDS MASTER stream list either."""
+    root = _sows_repo(tmp_path)
+    rulings = root / "ducktyper" / "ruling"
+    rulings.mkdir(parents=True)
+    (rulings / "RULING-274-x.md").write_text(
+        "---\nruling: 274\nstatus: ACTIVE\nlanding_commit: self\n---\n\nb\n",
+        encoding="utf-8",
+    )
+    d = root / "ducktyper" / "sow" / "worldprops"
+    d.mkdir(parents=True)
+    (d / "worldprops-SOW-25-x.md").write_text(
+        "---\nsow: worldprops\nn: 25\nschema_rev: 16\nstatus: RULING-REQUESTED\n"
+        'resolved_by: "ruling: 274"\n'
+        "project: ducktyper\ncreated: 2026-07-01\nupdated: 2026-07-01\n---\n\nb\n",
+        encoding="utf-8",
+    )
+    rc = cli.main(["--triage", str(root)])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "NEEDS MASTER - a ruling is owed (0 streams, 0 open questions)" in out
+    assert "worldprops" not in out.split("NEEDS A SUCCESSOR")[0]
+
+
+def test_needs_master_stream_count_still_includes_a_genuinely_open_question(tmp_path, capsys):
+    """The companion case to the fix above: don't over-correct into hiding a real
+    open question. A stream with no resolved_by and no answering ruling must still
+    show up in BOTH the stream count and the OPEN question list."""
+    root = _sows_repo(tmp_path)
+    d = root / "ducktyper" / "sow" / "s1"
+    d.mkdir(parents=True)
+    (d / "s1-SOW-01-x.md").write_text(
+        "---\nsow: s1\nn: 1\nschema_rev: 16\nstatus: RULING-REQUESTED\n"
+        "project: ducktyper\ncreated: 2026-07-01\nupdated: 2026-07-01\n---\n\nb\n",
+        encoding="utf-8",
+    )
+    rc = cli.main(["--triage", str(root)])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "NEEDS MASTER - a ruling is owed (1 streams, 1 open questions)" in out
+    assert "OPEN  s1 SOW-1" in out
+
+
 def test_help_documents_triage(capsys):
     cli.main(["help", "--all"])
     out = capsys.readouterr().out
