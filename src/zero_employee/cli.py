@@ -255,7 +255,17 @@ def _inbox(root, stream) -> int:
     print("OPEN QUESTIONS (per-file open_questions: rollup — RULING-268):")
     for path, fm, summary in sorted(oq_rows, key=lambda t: str(t[1].get("updated", "?"))):
         tag = summary["tag"]
-        label = f"{tag} ({summary['resolved']}/{summary['total']})" if tag == "PARTIAL" else tag
+        # Phase 2 fixture proof (charter's own literal DoD line) found this printing a
+        # bare tag ("RESOLVED", no fraction) for the all-resolved/all-open cases, while
+        # the charter's Phase 2 acceptance text names "RESOLVED (3/3)" verbatim as what
+        # --inbox must report once the second ruling lands. Only PARTIAL ever carried
+        # the fraction before; RESOLVED and OPEN did not, and no test exercised those
+        # two tags' printed string before this fix (test_open_questions_inbox.py only
+        # asserted the dict shape for them, never the CLI's rendered line). Always
+        # showing the fraction is strictly more informative and matches the charter's
+        # own worked example string exactly, so this makes every tag consistent rather
+        # than special-casing PARTIAL.
+        label = f"{tag} ({summary['resolved']}/{summary['total']})"
         print(f"  {label:<14} {pathlib.Path(path).name}")
     if not oq_rows:
         print("  (none)")
