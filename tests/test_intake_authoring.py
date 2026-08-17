@@ -406,6 +406,87 @@ def test_promote_with_spec_cli(tmp_path, monkeypatch, capsys):
     assert "PROMOTED" in (root / intake_rel).read_text(encoding="utf-8")
 
 
+def test_promote_with_malformed_spec_cli_fails_clean_not_a_traceback(tmp_path, monkeypatch, capsys):
+    """MEASURED (docs/tutorial build, 2026-08-17): `--spec -` with plain prose
+    (the natural mistake — `zeo intake mission`'s own printed instructions read
+    like they want free text) crashed with a raw json.JSONDecodeError traceback
+    instead of the clean one-line error every sibling failure path in this
+    command family already prints."""
+    root = _corpus(tmp_path)
+    result, _ = create_intake(root, title="CLI promote bad spec", what="x")
+    monkeypatch.chdir(root)
+    monkeypatch.setattr("sys.stdin", io.StringIO("this is prose, not json"))
+    rc = cli.main(["intake", "promote", result.path, "--spec", "-"])
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "not valid JSON" in err
+    assert "Traceback" not in err
+
+
+def test_intake_propose_with_malformed_spec_cli_fails_clean(tmp_path, monkeypatch, capsys):
+    root = _corpus(tmp_path)
+    result, _ = create_intake(root, title="CLI propose bad spec", what="x")
+    monkeypatch.chdir(root)
+    monkeypatch.setattr("sys.stdin", io.StringIO("not json either"))
+    rc = cli.main(["intake", "propose", result.path, "--spec", "-"])
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "not valid JSON" in err
+    assert "Traceback" not in err
+
+
+def test_intake_new_with_malformed_spec_cli_fails_clean(tmp_path, monkeypatch, capsys):
+    root = _corpus(tmp_path)
+    monkeypatch.chdir(root)
+    monkeypatch.setattr("sys.stdin", io.StringIO("still not json"))
+    rc = cli.main(["intake", "new", "--spec", "-"])
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "not valid JSON" in err
+    assert "Traceback" not in err
+
+
+def test_sow_new_with_malformed_spec_cli_fails_clean(tmp_path, monkeypatch, capsys):
+    root = _corpus(tmp_path)
+    monkeypatch.chdir(root)
+    monkeypatch.setattr("sys.stdin", io.StringIO("nope, still prose"))
+    rc = cli.main(["sow", "new", "--spec", "-"])
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "not valid JSON" in err
+    assert "Traceback" not in err
+
+
+def test_spec_file_not_found_fails_clean_across_all_four_commands(tmp_path, monkeypatch, capsys):
+    root = _corpus(tmp_path)
+    result, _ = create_intake(root, title="missing spec file", what="x")
+    monkeypatch.chdir(root)
+    missing = str(root / "does-not-exist.json")
+
+    rc = cli.main(["intake", "promote", result.path, "--spec", missing])
+    assert rc == 1
+    assert "not found" in capsys.readouterr().err
+
+    rc = cli.main(["intake", "propose", result.path, "--spec", missing])
+    assert rc == 1
+    assert "not found" in capsys.readouterr().err
+
+
+def test_spec_valid_json_but_not_an_object_fails_clean(tmp_path, monkeypatch, capsys):
+    """A JSON array or a bare string both parse as valid JSON but are not the
+    object shape every spec consumer (create_sow_from_spec, propose_intake,
+    ...) expects — must fail with a specific message, not an opaque
+    downstream AttributeError/TypeError from treating a list like a dict."""
+    root = _corpus(tmp_path)
+    monkeypatch.chdir(root)
+    monkeypatch.setattr("sys.stdin", io.StringIO("[1, 2, 3]"))
+    rc = cli.main(["sow", "new", "--spec", "-"])
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "must be a JSON object" in err
+    assert "Traceback" not in err
+
+
 def test_init_creates_intake_dir(tmp_path):
     root = tmp_path / "fresh"
     init_corpus(root)

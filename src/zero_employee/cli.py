@@ -160,6 +160,47 @@ def _discover_root(explicit):
     return None
 
 
+def _load_spec_json(spec_src):
+    """Read --spec (stdin via '-', or a file path) and parse it as JSON.
+
+    MEASURED (docs/tutorial build, 2026-08-17): all four `--spec` call sites
+    (`sow new`, `intake new`, `intake propose`, `intake promote`) called
+    `_json.loads(raw)` with no error handling — a real user piping plain
+    prose into `--spec -` (the natural mistake, since `zeo intake mission`'s
+    own printed instructions read like they want free text) got a raw Python
+    traceback (`json.decoder.JSONDecodeError`) instead of a clean message,
+    the only unguarded failure path in an otherwise consistently-guarded
+    command family (every sibling error here — a missing file, a missing
+    flag — prints one line and returns a real exit code).
+
+    Returns (spec_dict, None) on success, or (None, error_message) on any
+    failure — file not found, JSON syntax error, or valid JSON that isn't an
+    object. Never raises; every call site turns the second element into the
+    same `print(..., file=sys.stderr); return 1` shape it already uses for
+    its other guarded errors.
+    """
+    import json as _json
+
+    try:
+        raw = sys.stdin.read() if spec_src == "-" else pathlib.Path(spec_src).read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None, f"--spec file not found: {spec_src}"
+    except OSError as exc:
+        return None, f"--spec file could not be read: {spec_src} ({exc})"
+    try:
+        spec = _json.loads(raw)
+    except _json.JSONDecodeError as exc:
+        return None, (
+            f"--spec is not valid JSON ({exc}). "
+            "This flag takes a JSON object, not free-form prose — "
+            'e.g. --spec - <<<\'{"key": "value"}\'. '
+            "If you have prose notes, put them inside a JSON string value."
+        )
+    if not isinstance(spec, dict):
+        return None, f"--spec must be a JSON object (got {type(spec).__name__})"
+    return spec, None
+
+
 def _inbox(root, stream) -> int:
     """A stream's own view: open questions + rulings that answered it. The reliable
     form of the hand-grep that returns false-silence on a syntax slip (DS5-INBOX-239)."""
@@ -1582,7 +1623,6 @@ def _interactive_sow_prompts(flags: dict) -> dict:
 
 
 def _cmd_sow(argv: list[str]) -> int:
-    import json as _json
     import os
 
     from .ollama_client import DEFAULT_MODEL
@@ -1618,9 +1658,10 @@ def _cmd_sow(argv: list[str]) -> int:
 
     if sub == "new":
         if flags.get("spec") is not None:
-            spec_src = flags["spec"]
-            raw = sys.stdin.read() if spec_src == "-" else pathlib.Path(spec_src).read_text(encoding="utf-8")
-            spec = _json.loads(raw)
+            spec, spec_err = _load_spec_json(flags["spec"])
+            if spec_err:
+                print(f"zeo sow new: {spec_err}", file=sys.stderr)
+                return 1
             result, err = create_sow_from_spec(root, spec, cwd=cwd)
             if result is None:
                 print(f"✗ SOW not written\nReason: {err}", file=sys.stderr)
@@ -1920,8 +1961,10 @@ def _cmd_intake(argv: list[str]) -> int:
         if flags.get("_error"):
             return 2
         if flags.get("spec") is not None:
-            raw = sys.stdin.read() if flags["spec"] == "-" else pathlib.Path(flags["spec"]).read_text(encoding="utf-8")
-            spec = _json.loads(raw)
+            spec, spec_err = _load_spec_json(flags["spec"])
+            if spec_err:
+                print(f"zeo intake new: {spec_err}", file=sys.stderr)
+                return 1
             result, err = create_intake_from_spec(root, spec)
             if result is None:
                 print(f"✗ intake not written\nReason: {err}", file=sys.stderr)
@@ -2101,8 +2144,10 @@ def _cmd_intake(argv: list[str]) -> int:
         except FileNotFoundError as exc:
             print(str(exc), file=sys.stderr)
             return 1
-        raw = sys.stdin.read() if spec_src == "-" else pathlib.Path(spec_src).read_text(encoding="utf-8")
-        spec = _json.loads(raw)
+        spec, spec_err = _load_spec_json(spec_src)
+        if spec_err:
+            print(f"zeo intake propose: {spec_err}", file=sys.stderr)
+            return 1
         out_path, proposal, err = propose_intake(root, path, spec)
         if err:
             print(f"✗ proposal rejected\nReason: {err}", file=sys.stderr)
@@ -2158,8 +2203,10 @@ def _cmd_intake(argv: list[str]) -> int:
             return 1
         spec = None
         if flags["spec"] is not None:
-            raw = sys.stdin.read() if flags["spec"] == "-" else pathlib.Path(flags["spec"]).read_text(encoding="utf-8")
-            spec = _json.loads(raw)
+            spec, spec_err = _load_spec_json(flags["spec"])
+            if spec_err:
+                print(f"zeo intake promote: {spec_err}", file=sys.stderr)
+                return 1
 
         if sys.stdin.isatty() and not flags["json"] and spec is None:
             fm, body = load_intake(path)
