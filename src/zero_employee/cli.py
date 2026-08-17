@@ -1502,7 +1502,7 @@ def _cmd_cold_start(argv: list[str]) -> int:
     zero commits, zero file writes, into the TARGET work repo. Every survey
     item below is a read-only git/gh/grep/test call; the ONE write this verb
     performs lands in the SOWS repo, under
-    projects/<project>/sow/cold-start/<PROJECT>-COLD-START-SOW-1-ist-aufnahme.md
+    projects/<project>/sow/cold-start/<PROJECT>-COLD-START-SOW-01-ist-aufnahme.md
     -- never under the surveyed repo itself.
     """
     from .cold_start import derive_project_name, run_partial_survey, write_ist_aufnahme_sow

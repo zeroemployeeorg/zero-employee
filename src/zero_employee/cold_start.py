@@ -545,7 +545,7 @@ def render_ist_aufnahme_body(survey: dict, *, project: str) -> str:
 
 
 def write_ist_aufnahme_sow(sows_root: pathlib.Path, project: str, survey: dict) -> dict:
-    """Write `<PROJECT>-COLD-START-SOW-1-ist-aufnahme.md` under
+    """Write `<PROJECT>-COLD-START-SOW-01-ist-aufnahme.md` under
     `projects/<project>/sow/cold-start/` in the SOWS repo. `status: FINDING`,
     `lifecycle: RECON`.
 
@@ -561,8 +561,17 @@ def write_ist_aufnahme_sow(sows_root: pathlib.Path, project: str, survey: dict) 
     chain_dir.mkdir(parents=True, exist_ok=True)
     (sows_root / "projects" / project).mkdir(parents=True, exist_ok=True)
 
+    from .core import canonical_name
+
     stream = f"{project}-cold-start"
-    filename = f"{project.upper()}-COLD-START-SOW-1-ist-aufnahme.md"
+    # MEASURED (2026-08-17): a hand-built filename here ("{PROJECT}-COLD-START-
+    # SOW-1-...", no zero-pad) does not match what the corpus's own linter
+    # expects (canonical_name's zero-padded "<sow>-SOW-<n>-<slug>.md") and the
+    # write fails closed with a noncanonical-name error -- caught by Master
+    # manually probing this function against a real throwaway repo before
+    # trusting the stream's own report. Use the same generator every other SOW
+    # writer in this package uses instead of a second, drifted filename rule.
+    filename = canonical_name(stream.upper(), 1, "ist-aufnahme")
     dest = chain_dir / filename
 
     fm = build_frontmatter(

@@ -309,7 +309,7 @@ def test_cold_start_writes_zero_commits_zero_files_into_target_repo(target_repo,
     assert sow_path.is_file()
     assert sow_path.is_relative_to(sows_repo)
     assert sow_path.parent == sows_repo / "projects" / project / "sow" / "cold-start"
-    assert sow_path.name == f"{project.upper()}-COLD-START-SOW-1-ist-aufnahme.md"
+    assert sow_path.name == f"{project.upper()}-COLD-START-SOW-01-ist-aufnahme.md"
 
 
 def test_cold_start_sow_has_status_finding_lifecycle_recon(target_repo, sows_repo):
@@ -410,7 +410,7 @@ def test_cold_start_cli_end_to_end(target_repo, sows_repo):
 
     project = derive_project_name(target_repo)
     expected = (
-        sows_repo / "projects" / project / "sow" / "cold-start" / f"{project.upper()}-COLD-START-SOW-1-ist-aufnahme.md"
+        sows_repo / "projects" / project / "sow" / "cold-start" / f"{project.upper()}-COLD-START-SOW-01-ist-aufnahme.md"
     )
     assert expected.is_file()
 
