@@ -56,7 +56,7 @@ Create under **Repo → Settings → Environments** (or `gh api`):
      --extra-index-url https://pypi.org/simple/ zero-employee
    zeo --board          # expect exit 2 + "couldn't find a corpus"
    ZEO_SOWS_ROOT=/path/to/corpus zeo --board
-   sow-lint --help
+   zeo --help           # confirm the console-script resolves cleanly, exit 0
    ```
 
 ### Production PyPI
@@ -71,7 +71,7 @@ Create under **Repo → Settings → Environments** (or `gh api`):
    uv tool install zero-employee
    zeo --board
    ZEO_SOWS_ROOT=/path/to/corpus zeo --board
-   sow-lint --help
+   zeo --help           # confirm the console-script resolves cleanly, exit 0
    ```
 
 Version numbers are permanent on each index — a bad upload cannot be un-shipped.

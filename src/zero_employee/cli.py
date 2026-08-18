@@ -12,6 +12,7 @@ import subprocess
 import io
 import contextlib
 import socket
+import typer
 from .core import (
     promote_plan,
     resync_check,
@@ -3633,6 +3634,235 @@ def main(argv: list[str] | None = None) -> int:
         + (f" · governance errors: {gov_errs}" if skill_path else "")
     )
     return 1 if (n_fail or n_cannot or gov_errs) else 0
+
+
+# ── Typer front door (Rev migration: hand-rolled argv parser → Typer) ──────────
+#
+# `main(argv)` above is UNTOUCHED and remains the single source of truth for every
+# verb's behavior, every legacy bare flag (--board, --triage, --digest, --mint, ...),
+# every exit code, and every --json payload — it is what all 809 existing tests call
+# directly, and what every one of the `_cmd_*` handlers still is. This section adds a
+# SEPARATE, ADDITIONAL front door: a Typer `app` that becomes the `zeo` console-script
+# entry point, so that `zeo --help` / `zeo <verb> --help` (at the process level) get
+# Typer's rich-formatted listing of the 20 top-level verbs — the actual point of this
+# migration — while every verb's own runtime behavior is a plain passthrough into the
+# SAME handler `main()` already dispatches to. Nothing here re-implements business
+# logic; `ctx.args` is handed to `main()` verbatim.
+#
+# Legacy bare flags (`--board`, `--kosten`, ...) and lint positionals (`zeo some.md`)
+# are NOT modeled as Typer options on the root command: Click's own command-resolution
+# treats an unrecognized first token as "no such command" before any callback logic
+# can run, so a flat mix of "verb OR arbitrary legacy flag OR arbitrary lint path" is
+# not expressible as one Typer command group without reimplementing (and risking
+# behavioral drift in) the legacy parser's own disambiguation rules (e.g. "does this
+# positional look like a path, a duration, or a stream name" — see --digest/--restaufwand
+# above). Instead, `cli_entry()` (the actual console-script target) peeks at argv[0]:
+# a known verb name routes into the Typer `app`; --version is handled directly;
+# everything else — every legacy flag, every bare invocation, every lint target —
+# routes to `main()` exactly as it always has. This is the "thin compatibility shim
+# that detects the legacy invocation and forwards" option named in this migration's
+# own constraints, chosen because it holds the legacy surface byte-identical by
+# construction (same function, same code path) rather than by re-derivation.
+_VERB_NAMES = (
+    "help",
+    "orient",
+    "new",
+    "work",
+    "next",
+    "board",
+    "triage",
+    "digest",
+    "index",
+    "mint",
+    "hooks",
+    "init",
+    "scaffold",
+    "bridges",
+    "equip",
+    "cold-start",
+    "sow",
+    "intake",
+    "doctor",
+    "artifact",
+)
+
+app = typer.Typer(
+    add_completion=False,
+    no_args_is_help=False,
+    help="zeo (zero-employee) — portable SOW governance tooling.",
+)
+
+_PASSTHROUGH = {
+    "context_settings": {"allow_extra_args": True, "ignore_unknown_options": True},
+    "add_help_option": False,
+}
+
+
+@app.callback(invoke_without_command=True)
+def _root(
+    ctx: typer.Context,
+    version: bool = typer.Option(False, "--version", help="Print the installed zeo version and exit."),
+):
+    """zeo (zero-employee) — portable SOW governance tooling.
+
+    Bare `zeo`, every legacy `--flag` (--board, --triage, --digest, --mint, ...),
+    and lint targets (`zeo path/to/file.md`) are handled before Typer's own command
+    resolution runs (see `cli_entry`) and never reach this callback in practice;
+    it exists for `--version` and so `zeo --help` / `zeo` under Typer's own argv
+    handling degrade sensibly if invoked directly against `app()`.
+    """
+    if version:
+        print(_version())
+        raise typer.Exit(0)
+    if ctx.invoked_subcommand is None:
+        raise typer.Exit(main([]))
+
+
+@app.command("help", **_PASSTHROUGH)
+def _typer_help(ctx: typer.Context):
+    """Progressive help (zeo help --all for the full legacy reference)."""
+    raise typer.Exit(main(["help", *ctx.args]))
+
+
+@app.command("orient", **_PASSTHROUGH)
+def _typer_orient(ctx: typer.Context):
+    """Human/agent orientation briefing (--json for agents)."""
+    raise typer.Exit(main(["orient", *ctx.args]))
+
+
+@app.command("new", **_PASSTHROUGH)
+def _typer_new(ctx: typer.Context):
+    """Start intake / SOW / project (interactive menu, or --json)."""
+    raise typer.Exit(main(["new", *ctx.args]))
+
+
+@app.command("work", **_PASSTHROUGH)
+def _typer_work(ctx: typer.Context):
+    """Continue governed work: listing, or detail for one stream."""
+    raise typer.Exit(main(["work", *ctx.args]))
+
+
+@app.command("next", **_PASSTHROUGH)
+def _typer_next(ctx: typer.Context):
+    """Highest-priority next action (--json for agents)."""
+    raise typer.Exit(main(["next", *ctx.args]))
+
+
+@app.command("board", **_PASSTHROUGH)
+def _typer_board(ctx: typer.Context):
+    """Write local STATE.md (gitignored). Legacy alias: zeo --board."""
+    raise typer.Exit(main(["board", *ctx.args]))
+
+
+@app.command("triage", **_PASSTHROUGH)
+def _typer_triage(ctx: typer.Context):
+    """The operator worklist. Legacy alias: zeo --triage."""
+    raise typer.Exit(main(["triage", *ctx.args]))
+
+
+@app.command("digest", **_PASSTHROUGH)
+def _typer_digest(ctx: typer.Context):
+    """What happened in a session. Legacy alias: zeo --digest."""
+    raise typer.Exit(main(["digest", *ctx.args]))
+
+
+@app.command("index", **_PASSTHROUGH)
+def _typer_index(ctx: typer.Context):
+    """zeo index streams|rulings — canonical form of --stream-index / --ruling-index."""
+    raise typer.Exit(main(["index", *ctx.args]))
+
+
+@app.command("mint", **_PASSTHROUGH)
+def _typer_mint(ctx: typer.Context):
+    """zeo mint ruling|sow ... — canonical subcommand form of --mint."""
+    raise typer.Exit(main(["mint", *ctx.args]))
+
+
+@app.command("hooks", **_PASSTHROUGH)
+def _typer_hooks(ctx: typer.Context):
+    """install | pre-commit | session-start | stop | pretooluse-git."""
+    raise typer.Exit(main(["hooks", *ctx.args]))
+
+
+@app.command("init", **_PASSTHROUGH)
+def _typer_init(ctx: typer.Context):
+    """Scaffold a corpus: claude-md/CLAUDE.md marker + root CLAUDE.md."""
+    raise typer.Exit(main(["init", *ctx.args]))
+
+
+@app.command("scaffold", **_PASSTHROUGH)
+def _typer_scaffold(ctx: typer.Context):
+    """Create projects/<project>/CLAUDE.md + Rev-17 SOW under sow/<stream>/."""
+    raise typer.Exit(main(["scaffold", *ctx.args]))
+
+
+@app.command("bridges", **_PASSTHROUGH)
+def _typer_bridges(ctx: typer.Context):
+    """Install/refresh selected IDE/agent bridges only."""
+    raise typer.Exit(main(["bridges", *ctx.args]))
+
+
+@app.command("equip", **_PASSTHROUGH)
+def _typer_equip(ctx: typer.Context):
+    """Install .claude/ + CLAUDE.md ALWAYS-tier files into a work repo."""
+    raise typer.Exit(main(["equip", *ctx.args]))
+
+
+@app.command("cold-start", **_PASSTHROUGH)
+def _typer_cold_start(ctx: typer.Context):
+    """RULING-278 s3 Ist-Aufnahme (partial) against a target repo, read-only."""
+    raise typer.Exit(main(["cold-start", *ctx.args]))
+
+
+@app.command("sow", **_PASSTHROUGH)
+def _typer_sow(ctx: typer.Context):
+    """new|set|add|remove|draft|from-intake|doctor — SOW authoring."""
+    raise typer.Exit(main(["sow", *ctx.args]))
+
+
+@app.command("intake", **_PASSTHROUGH)
+def _typer_intake(ctx: typer.Context):
+    """new|open|edit|doctor|context|mission|propose|promote — intent capture."""
+    raise typer.Exit(main(["intake", *ctx.args]))
+
+
+@app.command("doctor", **_PASSTHROUGH)
+def _typer_doctor(ctx: typer.Context):
+    """zeo doctor PATH | zeo doctor --changed — actionable readiness check."""
+    raise typer.Exit(main(["doctor", *ctx.args]))
+
+
+@app.command("artifact", **_PASSTHROUGH)
+def _typer_artifact(ctx: typer.Context):
+    """zeo artifact set FILE KEY VALUE (thin alias onto zeo sow set)."""
+    raise typer.Exit(main(["artifact", *ctx.args]))
+
+
+def cli_entry() -> None:
+    """The actual `zeo` console-script target (see [project.scripts] in pyproject.toml).
+
+    Routes a known verb as argv[0] into the Typer `app` (rich --help, real
+    subcommands); routes --version directly; routes everything else — every
+    legacy bare flag, a bare invocation, a lint target — into `main()`,
+    completely unchanged from the pre-Typer entry point. See the module-level
+    comment above `_VERB_NAMES` for why this split exists instead of a single
+    Typer command group.
+    """
+    argv = sys.argv[1:]
+    if argv and argv[0] in _VERB_NAMES:
+        app()
+        return
+    if argv and argv[0] == "--version":
+        print(_version())
+        raise SystemExit(0)
+    # Only --help routes to the Typer app (its root callback binds --help but
+    # not -h). -h falls through to main(argv), which has always treated -h as
+    # a first-class --help alias in its own dispatch (7 call sites) — routing
+    # it into Typer here silently broke that alias (Typer: "No such option: -h").
+    if not argv or argv[0] == "--help":
+        app()
+        return
+    raise SystemExit(main(argv))
 
 
 if __name__ == "__main__":

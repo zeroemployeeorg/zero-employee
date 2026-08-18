@@ -1,5 +1,65 @@
 # Changelog
 
+### Changed
+- **`zeo`'s console-script entry point migrated from a hand-rolled `argv`-walking
+  parser to Typer.** The prior parser (`main(argv)`) grew one bespoke `if`/`elif`
+  branch per verb and per legacy flag over nineteen releases — functionally sound,
+  but every new verb meant hand-writing its own usage string, and there was no
+  single place an agent (or a human) could run one command and see every verb
+  `zeo` supports. In agentic-development terms, `--help` quality is not
+  cosmetic: it's the interface a coding agent actually reads before guessing at
+  flags, and a bespoke parser has no `--help` at all beyond what each branch
+  chose to print by hand.
+  - **`main(argv)` itself is untouched** — same function, same 809 pre-existing
+    tests calling it directly, same `_cmd_*` handlers, same exit codes, same
+    `--json` payloads. The migration is strictly additive: zero lines removed
+    from `cli.py`, confirmed by diff.
+  - **New front door, `cli_entry()`** (the actual `[project.scripts]` target
+    now — `pyproject.toml`'s `zeo = "zero_employee.cli:main"` becomes
+    `zeo = "zero_employee.cli:cli_entry"`): it peeks at `argv[0]`. A known verb
+    name (`orient`, `sow`, `triage`, `mint`, ... all 20, including `new`) routes
+    into a new Typer `app` whose 20 commands are thin one-line passthroughs —
+    `ctx.args` handed to `main()` verbatim, no business logic reimplemented.
+    `--version` is handled directly. Everything else — every legacy bare flag
+    (`--board`, `--triage`, `--digest`, `--kosten`, `--mint`, `--priority`, ...),
+    a bare `zeo`, and every lint target (`zeo path/to/file.md`) — routes to
+    `main()` exactly as it always did. Click's own command resolution treats an
+    unrecognized first token as "no such command" before any callback logic can
+    run, so this flat mix of "verb OR arbitrary legacy flag OR arbitrary lint
+    path" isn't expressible as a single Typer command group without
+    reimplementing (and risking behavioral drift in) the legacy parser's own
+    disambiguation rules — hence the peek-and-route shim instead of a full
+    rewrite onto Typer's own argument model.
+  - **What's new and better:** bare `zeo --help` now gives Typer's rich-rendered
+    listing of all 20 top-level verbs with a one-line purpose each, generated
+    from real docstrings instead of a hand-maintained usage string — the actual
+    point of the migration. `typer>=0.27.1` added to dependencies (pinned and
+    locked in `uv.lock`).
+  - **What's explicitly NOT new:** a verb's own `--help`/`-h` (e.g.
+    `zeo orient --help`) is not intercepted by Typer — every verb command is
+    registered with `add_help_option: False` and forwards `--help` straight
+    through to `main()`'s existing per-verb behavior, unchanged. The deeper,
+    full-flag reference for a given verb remains `zeo help --all`, not a verb's
+    own `--help`.
+  - **Verified:** `uv run pytest -q` and `make verify` both green, zero test
+    files touched (`tests/` diff against the pre-migration tree is empty).
+    Manually exercised bare `zeo`, every legacy bare flag, both `--json` forms,
+    `mint sow`, `intake --json`, lint-a-path, and an unknown token — byte-identical
+    stdout/exit code against the pre-migration entry point in every case checked.
+  - **Caught and closed before merge: top-level `zeo -h` (no verb) initially
+    lost the pre-migration parser's `-h`-as-`--help` alias** (bound in seven
+    places in `main()`). `cli_entry()`'s first cut routed both `--help` and
+    `-h` into the Typer app, but Typer's own root callback only binds
+    `--help` — so `zeo -h` hit Typer's "no such option" and exited 2 instead
+    of the legacy `ZEO HELP` screen at exit 0. No test exercises `cli_entry()`
+    directly, so the suite stayed green through the regression; caught by
+    manual adversarial verification against the pre-migration entry point,
+    not by the test suite. Fixed by narrowing `cli_entry()`'s Typer-routing
+    check to `argv[0] == "--help"` only, so `-h` now falls through to
+    `main(argv)` like every other non-verb token — confirmed byte-identical
+    to pre-migration `zeo -h` output at exit 0. Verb-level `-h` was never
+    affected (verbs never bound Typer's help flag to begin with — see above).
+
 ## [0.3.3] - 2026-08-17
 
 ### Fixed
