@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.4.0] - 2026-08-18
+
 ### Changed
 - **`zeo`'s console-script entry point migrated from a hand-rolled `argv`-walking
   parser to Typer.** The prior parser (`main(argv)`) grew one bespoke `if`/`elif`
