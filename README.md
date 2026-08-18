@@ -102,6 +102,7 @@ zeo work                # continue governed work
 zeo triage              # what needs attention
 zeo help                # progressive help
 zeo help --all          # full command reference
+zeo --help              # every top-level verb, one line each
 
 # Target a specific corpus path from anywhere:
 zeo board /path/to/corpus
@@ -109,6 +110,11 @@ ZEO_SOWS_ROOT=/path/to/corpus zeo triage
 ```
 
 *If no corpus is found, `zeo` still orients you (suggests `zeo init`) and exits zero — it never hallucinates a board.*
+
+*`zeo --help` (bare, no verb) is Typer-rendered: every top-level verb with its one-line purpose.
+A verb's own `--help`/`-h` (`zeo orient --help`) is NOT intercepted by Typer — it passes straight
+through to that verb's normal handler, same as any other argument, so a verb's real flag surface
+lives in `zeo help --all`, not behind its own `--help`.*
 
 ---
 
