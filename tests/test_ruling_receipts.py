@@ -119,6 +119,101 @@ def test_stream_n_form_receipt_citation_round_trips():
         assert out == {}
 
 
+def test_RULING_320_citation_on_a_LATER_rev_in_the_same_chain_is_accepted():
+    """Pins the exact RULING-047/COURSE-MIGRATION-SOW-1/SOW-2 shape (RULING-320).
+
+    A ruling names a SOW at n:1 in requested_by. n:1 itself carries NO resolved_by (its
+    own body would explicitly defer the citation to a later rev — the defer is prose,
+    irrelevant to this lint, which only reads frontmatter). The citation correctly lands
+    on n:2, the SAME stream's next rev — TOOL-RUNBOOK.md's sanctioned closure path 1
+    ("the asking stream files a later rev CITING the ruling"). Before RULING-320's fix,
+    the checker resolved only the literally-named n:1 file, found no resolved_by there,
+    and hard-FAILed a live, correctly-closed ruling. It must now pass clean."""
+    with tempfile.TemporaryDirectory() as t:
+        root = _corpus(pathlib.Path(t))
+        d = root / "p" / "sow" / "course-migration"
+        _sow(d, "COURSE-MIGRATION-SOW-1-inventory-and-course-map.md", "course-migration", 1)
+        _sow(
+            d,
+            "COURSE-MIGRATION-SOW-2-map-ruled-pilot-opens.md",
+            "course-migration",
+            2,
+            resolved_by="ruling: RULING-047",
+        )
+        _ruling(root / "ruling", "047", "course-migration#1", extra="status: ACTIVE\n")
+        out = check_ruling_receipts(_all_fm(root), root)
+        assert out == {}
+
+
+def test_RULING_320_path_form_citation_on_a_LATER_rev_is_also_accepted():
+    """Same shape as above but requested_by names the ASKER by path-with-reason form
+    (RULING-214/A1's legacy path), not <stream>#<n> — the chain-walk must key off the
+    resolved target file's OWN sow:/n: fields, not the citation string's form."""
+    with tempfile.TemporaryDirectory() as t:
+        root = _corpus(pathlib.Path(t))
+        d = root / "p" / "sow" / "course-migration"
+        _sow(d, "COURSE-MIGRATION-SOW-1-inventory-and-course-map.md", "course-migration", 1)
+        _sow(
+            d,
+            "COURSE-MIGRATION-SOW-2-map-ruled-pilot-opens.md",
+            "course-migration",
+            2,
+            resolved_by="ruling: RULING-047",
+        )
+        rb = "COURSE-MIGRATION-SOW-1-inventory-and-course-map.md (pre-schema citation form)"
+        _ruling(root / "ruling", "047", rb, extra="status: ACTIVE\n")
+        out = check_ruling_receipts(_all_fm(root), root)
+        assert out == {}
+
+
+def test_RULING_320_no_citation_ANYWHERE_in_the_forward_chain_still_fails():
+    """The negative case RULING-320 §3 demands: widening WHERE a citation may land must
+    not weaken WHETHER one is required. A chain with several later revs, none of which
+    ever cites the ruling back, must still WARN (or ERROR in commit_mode) exactly as
+    before - the chain-walk finding nothing is not silently treated as success."""
+    with tempfile.TemporaryDirectory() as t:
+        root = _corpus(pathlib.Path(t))
+        d = root / "p" / "sow" / "s"
+        _sow(d, "f1.md", "s", 1)  # no resolved_by
+        _sow(d, "f2.md", "s", 2)  # no resolved_by
+        _sow(d, "f3.md", "s", 3)  # no resolved_by either - citation never lands anywhere
+        _ruling(root / "ruling", "200", "s#1")
+        out = check_ruling_receipts(_all_fm(root), root)
+        assert len(out) == 1
+        [(path, findings)] = out.items()
+        assert path.endswith("RULING-200-x.md")
+        assert findings[0].code == "resolved-by-missing-citation"
+        assert findings[0].severity == "WARN"
+
+
+def test_RULING_320_commit_mode_still_promotes_no_chain_citation_to_error():
+    with tempfile.TemporaryDirectory() as t:
+        root = _corpus(pathlib.Path(t))
+        d = root / "p" / "sow" / "s"
+        _sow(d, "f1.md", "s", 1)
+        _sow(d, "f2.md", "s", 2)
+        _ruling(root / "ruling", "200", "s#1")
+        out = check_ruling_receipts(_all_fm(root), root, commit_mode=True)
+        [(path, findings)] = out.items()
+        assert findings[0].severity == "ERROR"
+
+
+def test_RULING_320_a_citation_on_an_EARLIER_rev_than_the_named_one_does_not_count():
+    """The walk is FORWARD only (RULING-320's ruled text: 'walk ... forward'). A
+    resolved_by sitting on an earlier n than the one requested_by names must not
+    satisfy the check - that would be a stream citing a ruling before it was even
+    asked, not a real receipt for THIS ruling."""
+    with tempfile.TemporaryDirectory() as t:
+        root = _corpus(pathlib.Path(t))
+        d = root / "p" / "sow" / "s"
+        _sow(d, "f1.md", "s", 1, resolved_by="ruling: RULING-999")  # unrelated earlier citation
+        _sow(d, "f2.md", "s", 2)  # the ruling names THIS one, and it never cites back
+        _ruling(root / "ruling", "200", "s#2")
+        out = check_ruling_receipts(_all_fm(root), root)
+        assert len(out) == 1
+        assert out[list(out)[0]][0].code == "resolved-by-missing-citation"
+
+
 def test_build_sow_n_index_keeps_the_latest_rev_by_updated():
     with tempfile.TemporaryDirectory() as t:
         root = _corpus(pathlib.Path(t))

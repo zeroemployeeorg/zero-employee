@@ -2126,6 +2126,31 @@ def _resolved_by_cites(fm, ruling_nnn):
         return t.lstrip("0") == str(ruling_nnn).lstrip("0")
 
 
+def _chain_cites(sow_index, sow_id, start_n, ruling_nnn):
+    """RULING-320: walk stream `sow_id`'s chain FORWARD from `start_n` (inclusive) and
+    return the name of the first later rev whose `resolved_by` cites `ruling_nnn`, or None.
+
+    Same identity `sow_index` already uses corpus-wide — {(sow_id, n): (path, fm)} keyed
+    on the declared `sow:` field, the same "same stream" notion `build_stream_index`/
+    `locate_stream` apply elsewhere (the declaration is the property, doctrine). No new
+    identity invented: this just asks sow_index for every n >= start_n under the same id.
+
+    RULING-320's proof case: a ruling names `COURSE-MIGRATION-SOW-1` (n:1) in
+    `requested_by`; SOW-1 itself explicitly defers `resolved_by` to its own next rev; the
+    citation lands on SOW-2 (n:2) instead. The old code checked ONLY n:1's frontmatter and
+    FAILED. This walks n:1, n:2, n:3, ... and accepts a citation landing on ANY of them —
+    widening WHERE the citation may land, not whether one must exist somewhere (RULING-320
+    §3): a chain with no citation on any later rev still returns None, same fail-closed
+    posture as before.
+    """
+    same_stream_ns = sorted(n for (sid, n) in sow_index if sid == sow_id and n >= start_n)
+    for n in same_stream_ns:
+        path, fm = sow_index[(sow_id, n)]
+        if _resolved_by_cites(fm, ruling_nnn):
+            return f"{sow_id}#{n} ({pathlib.Path(path).name})"
+    return None
+
+
 def check_ruling_receipts(files_fm, root, commit_mode=False, sow_index=None, stem_index=None):
     """doctrine: 'a ruling naming an asking SOW whose resolved_by does not cite it
     back is an ERROR at the commit path, WARN otherwise.' Deliberately narrow: this checks
@@ -2141,6 +2166,13 @@ def check_ruling_receipts(files_fm, root, commit_mode=False, sow_index=None, ste
     via `sow_index`/`stem_index`, built fresh here if the caller has not passed them in -
     files_fm alone would silently blind a single-file `--commit-check` (the asker lives in
     a different file, invisible to a one-file files_fm — MEASURED, see build_stem_index).
+
+    RULING-320: the named file is only the STARTING POINT of resolution, not the whole of
+    it. `roles/TOOL-RUNBOOK.md`'s own sanctioned closure path 1 ("the asking stream files a
+    later rev CITING the ruling") means the citation may legitimately land on any LATER rev
+    in the same chain, not only the literally-named file — see `_chain_cites`. This does not
+    weaken the check: a chain with no citation ANYWHERE in its own forward walk still WARNs/
+    FAILs exactly as before (RULING-320 §3 — widen WHERE, not WHETHER).
     """
     if sow_index is None:
         sow_index = build_sow_n_index(root)
@@ -2165,6 +2197,7 @@ def check_ruling_receipts(files_fm, root, commit_mode=False, sow_index=None, ste
         for e in _split_requesters(rb):
             target_fm = None
             target_name = e
+            chain_id = chain_n = None  # (sow_id, n) to walk forward from, RULING-320
             sm = _STREAM_N_RE.match(e)
             pm = _PATH_WITH_REASON_RE.match(e)
             if sm:
@@ -2173,22 +2206,35 @@ def check_ruling_receipts(files_fm, root, commit_mode=False, sow_index=None, ste
                 if hit:
                     target_fm = hit[1]
                     target_name = f"{key[0]}#{key[1]}"
+                    chain_id, chain_n = key
             elif pm:
                 stem = pathlib.Path(pm.group(1)).stem
                 hit = stem_index.get(stem)
                 if hit:
                     target_fm = hit[1]
                     target_name = pathlib.Path(pm.group(1)).name
+                    # a path-form target's own sow:/n: fm fields give its chain identity,
+                    # if it has them (a pre-schema file with neither simply can't chain-walk
+                    # — falls back to the single-file check below, same as before RULING-320)
+                    tsid = target_fm.get("sow")
+                    tn = sow_identity(hit[0], target_fm)
+                    if tsid and tn is not None:
+                        chain_id, chain_n = str(tsid).strip(), tn
             if target_fm is None:
                 continue  # unresolvable target - check_requested_by's problem, not this one
             if _resolved_by_cites(target_fm, nnn):
                 continue
+            # RULING-320: the literally-named file didn't cite back — before flagging,
+            # walk its chain FORWARD (same sow_id, any later n) for a later-rev citation,
+            # the sanctioned closure path 1 (TOOL-RUNBOOK) the old single-file check missed.
+            if chain_id is not None and _chain_cites(sow_index, chain_id, chain_n, nnn) is not None:
+                continue
             finding = Finding(
                 WARN,
                 "resolved-by-missing-citation",
-                f"RULING-{nnn} names asking SOW '{target_name}' in requested_by, but that "
-                f"SOW's resolved_by does not cite RULING-{nnn} back — the disposition and "
-                "its receipt must land together (doctrine)",
+                f"RULING-{nnn} names asking SOW '{target_name}' in requested_by, but neither "
+                f"that SOW nor any later rev in its own chain cites RULING-{nnn} back via "
+                "resolved_by — the disposition and its receipt must land together (doctrine)",
             )
             if commit_mode:
                 finding = Finding(ERROR, finding.code, finding.message)
