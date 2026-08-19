@@ -28,6 +28,11 @@ import subprocess
 import sys
 import zipfile
 
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover -- py3.11+ ships tomllib; floor is 3.11
+    import tomli as tomllib  # type: ignore[no-redef]
+
 import pytest
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -53,12 +58,14 @@ def _walk_template_files(root: pathlib.Path) -> set[str]:
 
 
 @pytest.fixture(scope="module")
-def built_wheel_members(tmp_path_factory) -> set[str]:
-    """Build the real wheel via `uv build` and return its member paths.
+def built_wheel_path(tmp_path_factory) -> pathlib.Path:
+    """Build the real wheel via `uv build` once per module and return its path.
 
     A real subprocess build, not a mock of hatchling's config resolution --
     the whole point of this guarantee is to catch what the BUILD actually
-    does, not what the config merely claims to do.
+    does, not what the config merely claims to do. Other fixtures/tests that
+    need the wheel's bytes (not just its member list) depend on this instead
+    of re-shelling a second build.
     """
     out_dir = tmp_path_factory.mktemp("wheel-out")
     result = subprocess.run(
@@ -72,7 +79,13 @@ def built_wheel_members(tmp_path_factory) -> set[str]:
     )
     wheels = sorted(out_dir.glob("*.whl"))
     assert len(wheels) == 1, f"expected exactly one built wheel, found {wheels}"
-    with zipfile.ZipFile(wheels[0]) as zf:
+    return wheels[0]
+
+
+@pytest.fixture(scope="module")
+def built_wheel_members(built_wheel_path) -> set[str]:
+    """The built wheel's member paths (filenames only, no content)."""
+    with zipfile.ZipFile(built_wheel_path) as zf:
         return set(zf.namelist())
 
 
@@ -143,6 +156,59 @@ def test_zeo_stream_template_does_not_cite_the_nonexistent_boot_little_claude():
     text = path.read_text(encoding="utf-8")
     assert "BOOT-LITTLE-CLAUDE" not in text, "the stream template must not cite the nonexistent BOOT-LITTLE-CLAUDE.md"
     assert "@roles/BOOT-SUBAGENT.md" in text, "the stream template must import the real file, BOOT-SUBAGENT.md"
+
+
+def test_pyproject_declares_both_zeo_and_sow_lint_entry_points_at_the_same_target():
+    """RULING-251 s3 / ZEO-RELEASE-CHARTER-01 s2.1 / RULING-319: `sow-lint` is RETAINED,
+    never deprecated -- 227+ immutable corpus references (landed rulings, filed SOWs)
+    name it in their `check:` fields, and RULING-004 s5's append-dont-revert means those
+    checks must stay RUNNABLE forever. It was silently dropped from
+    `[project.scripts]` at 09bbbf2 (2026-08-09, "clean-cut rebranding") along with its
+    own explanatory comment -- a regression the charter's own DoD explicitly forbids
+    ("sow-lint working after install is part of your DoD too"). This is the static,
+    fast half of the guarantee: parse the real `pyproject.toml` directly (not a copy,
+    not an assumption) and demand both names resolve to the SAME entry function, so
+    a future edit cannot reintroduce the old `main` target for one name and the new
+    `cli_entry` for the other and have them silently diverge in behavior.
+    """
+    data = tomllib.loads((_REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    scripts = data["project"]["scripts"]
+    assert "zeo" in scripts, "the zeo entry point is missing from [project.scripts]"
+    assert "sow-lint" in scripts, (
+        "sow-lint entry point is missing from [project.scripts] -- it is RETAINED, "
+        "never deprecated (ZEO-RELEASE-CHARTER-01 s2.1, RULING-251 s3 remediation); "
+        "227+ immutable corpus references depend on it staying runnable"
+    )
+    assert scripts["zeo"] == scripts["sow-lint"], (
+        f"zeo ({scripts['zeo']!r}) and sow-lint ({scripts['sow-lint']!r}) must point at "
+        "the identical entry function so both names run the same CLI"
+    )
+
+
+def test_built_wheel_metadata_exposes_both_console_scripts(built_wheel_path, built_wheel_members):
+    """The behavioral half of the same guarantee: not just that `pyproject.toml`
+    SAYS both names exist, but that a real `uv build` actually produced a wheel
+    whose installed `entry_points.txt` (the file `pip`/`uv tool install` actually
+    reads to create the `~/.local/bin/{zeo,sow-lint}` shims) carries BOTH console
+    scripts, each resolving to `zero_employee.cli:cli_entry`. Presence of the
+    metadata file alone would only prove SOME entry_points.txt shipped -- this
+    reads its real bytes so a build that ships the file but drops one script
+    (or points it at the wrong/dead `main` target) still fails here. This
+    project's own packaging doctrine (see the module docstring above) is
+    "prove the wheel, not the config."
+    """
+    dist_info_names = {n for n in built_wheel_members if n.endswith(".dist-info/entry_points.txt")}
+    assert len(dist_info_names) == 1, f"expected exactly one dist-info entry_points.txt, found {dist_info_names}"
+    (member,) = dist_info_names
+    with zipfile.ZipFile(built_wheel_path) as zf:
+        text = zf.read(member).decode("utf-8")
+    assert "zeo = zero_employee.cli:cli_entry" in text, (
+        f"zeo console script missing/wrong target in built wheel metadata:\n{text}"
+    )
+    assert "sow-lint = zero_employee.cli:cli_entry" in text, (
+        f"sow-lint console script missing/wrong target in built wheel metadata -- "
+        f"RULING-251 s3 remediation regressed:\n{text}"
+    )
 
 
 def test_claude_settings_template_is_no_longer_the_empty_stub():

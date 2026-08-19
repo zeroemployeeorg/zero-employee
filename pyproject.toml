@@ -54,6 +54,17 @@ Changelog = "https://github.com/zeroemployeeorg/zero-employee/releases"
 
 [project.scripts]
 zeo = "zero_employee.cli:cli_entry"
+# sow-lint is RETAINED, never deprecated. 227+ IMMUTABLE references name it across the
+# fleet's landed rulings and filed SOWs, and their `check:` fields must stay RUNNABLE
+# (RULING-004 s5, append-dont-revert) -- dropping this entry point makes those checks
+# unrunnable in one commit. ZEO-RELEASE-CHARTER-01 s2.1 makes this explicit DoD: "the
+# sow-lint alias ... is RETAINED, never deprecated ... sow-lint working after install
+# is part of your DoD too." Restored by RULING-319/RULING-251 s3 remediation
+# (zeo-release-SOW-4) after it was silently dropped at 09bbbf2 (2026-08-09) during the
+# clean-cut rebrand -- a regression this charter's own DoD forbids. Points at the SAME
+# entry function as zeo (cli_entry), not the pre-Typer `main`, so both names get the
+# identical Typer-migrated CLI. RULING-093's legacy_name reasoning, applied to a command.
+sow-lint = "zero_employee.cli:cli_entry"
 
 # ── Build System Configuration ───────────────────────────────────────────
 [build-system]
