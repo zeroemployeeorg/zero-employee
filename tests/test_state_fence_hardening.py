@@ -1,0 +1,245 @@
+"""state-fence-hardening: visible-but-non-blocking hook warning, --repair salvage,
+atomic write, and the actionable FATAL message (STATE.md fence hardening).
+
+Root cause (already established, not re-derived here): splice_state_zone() in core.py
+fails loud (ValueError) on a malformed fence; _board() in cli.py catches that and
+returns exit 2 with a FATAL message, writing nothing. _regen_local_boards() in
+hooks.py runs --board on every pre-commit/session-start wrapped in a bare
+try/except Exception: pass with stdout redirected, so the FATAL was previously
+invisible in normal operation even though it printed to real stderr, because nobody
+ever looked at --board's exit code.
+"""
+
+import pathlib
+
+import pytest
+
+from zero_employee import cli
+from zero_employee.core import (
+    STATE_FENCE_CLOSE,
+    STATE_FENCE_OPEN,
+    render_state_zone,
+    salvage_state_prefix,
+    splice_state_zone,
+)
+from zero_employee.hooks import _regen_local_boards
+
+
+def _sows_repo(tmp_path):
+    (tmp_path / "claude-md").mkdir(parents=True)
+    (tmp_path / "claude-md" / "CLAUDE.md").write_text("Rev 17\n", encoding="utf-8")
+    return tmp_path
+
+
+def _malformed_state_md(root, roadmap="master's plan lives here\n"):
+    """A STATE.md whose fence is inverted (close before open) -- the exact shape
+    test_malformed_fence_fails_loud() in test_board.py already covers at the
+    splice_state_zone() unit level; here it sits in a real STATE.md on disk."""
+    text = (
+        "# STATE\n\n## ROADMAP\n" + roadmap + "\n" + STATE_FENCE_CLOSE + "\nold stale zone\n" + STATE_FENCE_OPEN + "\n"
+    )
+    (root / "STATE.md").write_text(text, encoding="utf-8")
+    return text
+
+
+# ---------------------------------------------------------------------------
+# (a) hook: visible-but-non-blocking warning on a malformed fence, other
+#     exceptions still silently swallowed unchanged.
+# ---------------------------------------------------------------------------
+
+
+def test_hook_warns_on_malformed_fence_but_does_not_raise(tmp_path, capsys):
+    root = _sows_repo(tmp_path)
+    _malformed_state_md(root)
+
+    # fail-open: must never raise, regardless of the broken cache file
+    _regen_local_boards(root)
+
+    captured = capsys.readouterr()
+    assert "STATE.md fence is malformed" in captured.err
+    assert "zeo board --repair" in captured.err
+    # the hook's own stdout must stay clean -- the warning is the only surfaced line
+    assert captured.out == ""
+    # and the file must be untouched: fail-open never repairs on its own
+    assert STATE_FENCE_CLOSE + "\nold stale zone\n" + STATE_FENCE_OPEN in (root / "STATE.md").read_text(
+        encoding="utf-8"
+    )
+
+
+def test_hook_stays_silent_on_a_well_formed_fence(tmp_path, capsys):
+    root = _sows_repo(tmp_path)
+    _regen_local_boards(root)
+    captured = capsys.readouterr()
+    assert captured.err == ""
+
+
+def test_hook_still_silently_swallows_other_exceptions(tmp_path, monkeypatch, capsys):
+    """The malformed-fence case is now visible; every OTHER exception in
+    _regen_local_boards must still be silently swallowed, unchanged -- this is
+    not a general 'stop hiding errors' change."""
+    root = _sows_repo(tmp_path)
+
+    def _boom(argv):
+        raise RuntimeError("unrelated failure, nothing to do with the fence")
+
+    monkeypatch.setattr(cli, "main", _boom)
+    _regen_local_boards(root)  # must not raise
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert captured.out == ""
+
+
+# ---------------------------------------------------------------------------
+# (b) --repair salvages content and produces a well-formed file from a
+#     malformed one.
+# ---------------------------------------------------------------------------
+
+
+def test_repair_salvages_roadmap_and_produces_well_formed_fence(tmp_path, capsys):
+    root = _sows_repo(tmp_path)
+    _malformed_state_md(root, roadmap="DO NOT LOSE THIS, operator wrote it by hand\n")
+
+    rc = cli.main(["--board", str(root), "--repair"])
+    assert rc == 0
+
+    out = (root / "STATE.md").read_text(encoding="utf-8")
+    assert "DO NOT LOSE THIS, operator wrote it by hand" in out
+    assert "old stale zone" not in out  # the malformed zone itself is not salvageable
+    o, c = out.find(STATE_FENCE_OPEN), out.find(STATE_FENCE_CLOSE)
+    assert o != -1 and c != -1 and o < c  # well-formed: open before close, both present
+
+    err = capsys.readouterr().err
+    assert "REPAIRED" in err
+
+
+def test_repair_works_through_the_board_verb_form_too(tmp_path):
+    """Must work through BOTH `zeo board --repair` (Typer passthrough into
+    main(["board", ...])) and `zeo --board --repair` (legacy flag form)."""
+    root = _sows_repo(tmp_path)
+    _malformed_state_md(root)
+
+    rc = cli.main(["board", str(root), "--repair"])
+    assert rc == 0
+    out = (root / "STATE.md").read_text(encoding="utf-8")
+    o, c = out.find(STATE_FENCE_OPEN), out.find(STATE_FENCE_CLOSE)
+    assert o != -1 and c != -1 and o < c
+
+
+def test_repair_salvages_when_only_close_marker_present():
+    zone = render_state_zone([], "abc1234", "2026-07-17")
+    existing = "# STATE\n\nkeep-me\n" + STATE_FENCE_CLOSE + "\n"
+    salvaged = salvage_state_prefix(existing)
+    assert salvaged == "# STATE\n\nkeep-me\n"
+    # feeding it back through splice_state_zone must now produce a clean fence
+    rebuilt = splice_state_zone(salvaged, zone)
+    assert "keep-me" in rebuilt
+    o, c = rebuilt.find(STATE_FENCE_OPEN), rebuilt.find(STATE_FENCE_CLOSE)
+    assert o != -1 and c != -1 and o < c
+
+
+def test_salvage_returns_none_when_no_marker_at_all():
+    assert salvage_state_prefix("# STATE\n\nno markers here at all\n") is None
+    assert salvage_state_prefix(None) is None
+
+
+# ---------------------------------------------------------------------------
+# (c) --repair on an already-well-formed file is a safe no-op / equivalent to
+#     a normal --board run.
+# ---------------------------------------------------------------------------
+
+
+def test_repair_on_well_formed_file_matches_normal_board_run(tmp_path):
+    # same leaf dirname ("corpus") under two distinct parents, so the title
+    # derived from pathlib.Path(root).resolve().name matches on both sides --
+    # the only intended difference between the two runs is the --repair flag.
+    root_a = _sows_repo(tmp_path / "one" / "corpus")
+    root_b = _sows_repo(tmp_path / "two" / "corpus")
+
+    cli.main(["--board", str(root_a)])
+    cli.main(["--board", str(root_b), "--repair"])
+
+    out_a = (root_a / "STATE.md").read_text(encoding="utf-8")
+    out_b = (root_b / "STATE.md").read_text(encoding="utf-8")
+    assert out_a == out_b
+
+
+def test_repair_on_well_formed_file_is_idempotent_and_clean(tmp_path, capsys):
+    root = _sows_repo(tmp_path)
+    cli.main(["--board", str(root)])  # first, normal write
+    first = (root / "STATE.md").read_text(encoding="utf-8")
+
+    rc = cli.main(["--board", str(root), "--repair"])
+    assert rc == 0
+    second = (root / "STATE.md").read_text(encoding="utf-8")
+    assert first == second
+    # no malformed fence was hit, so no REPAIRED line should print
+    assert "REPAIRED" not in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------------------
+# (d) the write is atomic: a temp file is used, and a failure mid-write never
+#     leaves a partial/corrupt target.
+# ---------------------------------------------------------------------------
+
+
+def test_board_write_uses_a_temp_file_beside_the_target(tmp_path, monkeypatch):
+    root = _sows_repo(tmp_path)
+    seen_tmp_names = []
+    real_replace = pathlib.os.replace
+
+    def _spy_replace(src, dst):
+        seen_tmp_names.append(pathlib.Path(src).name)
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(cli.os, "replace", _spy_replace)
+    cli.main(["--board", str(root)])
+
+    assert len(seen_tmp_names) == 1
+    assert seen_tmp_names[0] != "STATE.md"  # written to a distinct temp name, not the target directly
+    assert "STATE.md" in seen_tmp_names[0]  # but clearly associated with it (mkstemp prefix)
+
+
+def test_a_failed_write_never_leaves_a_partial_target_file(tmp_path, monkeypatch):
+    """Simulate a crash mid-write (os.replace raises) and confirm no partial file
+    is left in place of a pre-existing, previously-good STATE.md."""
+    root = _sows_repo(tmp_path)
+    cli.main(["--board", str(root)])  # establish a good baseline file
+    good = (root / "STATE.md").read_text(encoding="utf-8")
+
+    def _boom(src, dst):
+        raise OSError("simulated crash mid-replace")
+
+    monkeypatch.setattr(cli.os, "replace", _boom)
+    with pytest.raises(OSError):
+        cli.main(["--board", str(root)])
+
+    # the original file must be untouched -- no truncated/partial write landed
+    assert (root / "STATE.md").read_text(encoding="utf-8") == good
+    # and the leftover temp file must have been cleaned up, not left behind
+    leftovers = [p for p in root.glob(".STATE.md.*.tmp")]
+    assert leftovers == []
+
+
+# ---------------------------------------------------------------------------
+# (e) the FATAL message names the --repair recovery command.
+# ---------------------------------------------------------------------------
+
+
+def test_fatal_message_names_the_repair_command(tmp_path, capsys):
+    root = _sows_repo(tmp_path)
+    _malformed_state_md(root)
+
+    rc = cli.main(["--board", str(root)])
+    assert rc == 2
+
+    err = capsys.readouterr().err
+    assert "FATAL" in err
+    assert "--repair" in err
+    # the file must be untouched -- default path stays fail-loud, no write
+    assert not (root / "STATE.md").read_text(encoding="utf-8").startswith(STATE_FENCE_OPEN)
+
+
+def test_splice_state_zone_raises_with_actionable_message_directly():
+    zone = render_state_zone([], "abc1234", "2026-07-17")
+    with pytest.raises(ValueError, match="--repair"):
+        splice_state_zone(STATE_FENCE_CLOSE + "\nx\n" + STATE_FENCE_OPEN, zone)

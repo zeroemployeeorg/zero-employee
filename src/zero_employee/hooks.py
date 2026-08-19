@@ -185,12 +185,31 @@ def _staged_sow_ruling_files(corpus_root: pathlib.Path) -> list[str]:
 
 
 def _regen_local_boards(corpus_root: pathlib.Path) -> None:
-    """Fail-open local board refresh. Never stages the files."""
+    """Fail-open local board refresh. Never stages the files.
+
+    Stays fail-open by design: a broken local cache file must never block a commit
+    or a session start. But a malformed STATE.md fence (--board exits 2, the ONLY
+    non-zero exit `_board()` has) was previously invisible even to a human running
+    the hook by hand — stdout is redirected below, and nothing ever looked at the
+    return code, so the exit-2 FATAL vanished silently and could persist through
+    unbounded commits/sessions. This one case is now surfaced as a one-line warning
+    to REAL stderr (not the redirected stream) naming the fix. Every OTHER failure
+    mode — any exception `--board` or `--stream-index` might raise — is still
+    silently swallowed here, unchanged; this is not a general "stop hiding errors"
+    change, only this specific detectable and actionable case.
+    """
     from . import cli
 
     try:
         with contextlib.redirect_stdout(io.StringIO()):
-            cli.main(["--board", str(corpus_root)])
+            rc = cli.main(["--board", str(corpus_root)])
+        if rc == 2:
+            print(
+                "zeo: local STATE.md fence is malformed and was NOT regenerated "
+                "(cache only — nothing else is affected). Fix it with: "
+                "zeo board --repair",
+                file=sys.stderr,
+            )
     except Exception:
         pass
     try:

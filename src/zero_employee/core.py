@@ -4861,6 +4861,32 @@ def splice_state_zone(existing, zone, title="the fleet"):
         return existing.rstrip("\n") + "\n\n" + zone + "\n"
     if o == -1 or c == -1 or c < o:
         raise ValueError(
-            "STATE fence is malformed (open/close missing or inverted) — refusing to write; fix the fence by hand"
+            "STATE fence is malformed (open/close missing or inverted) — refusing to write; "
+            "run `zeo board --repair` (or `zeo --board --repair`) to salvage and rebuild it"
         )
     return existing[:o] + zone + existing[c + len(STATE_FENCE_CLOSE) :]
+
+
+def salvage_state_prefix(existing):
+    """Best-effort recovery of the hand-authored content ABOVE a malformed fence.
+
+    Used only by `--repair` (opt-in). The default splice_state_zone() path stays
+    fail-loud and untouched — this is a SEPARATE, deliberately more forgiving read
+    for the one case where a human wants the tool to guess rather than fix by hand.
+
+    Keeps everything before whichever marker appears FIRST BY POSITION in the text
+    (not by which one is "open" vs "close" — a malformed fence can have them in
+    either order, that is the whole reason it is malformed). Whichever marker sits
+    closest to the top is unambiguously the boundary where hand-authored content
+    ends and the broken/fenced zone begins; anything from there on — including a
+    stray earlier-than-expected close marker — is discarded as unsalvageable. If
+    only one marker is present, that one is the boundary. If neither is found, or
+    existing is None, there is nothing to salvage — the whole file predates the
+    fence and is kept intact by the caller instead.
+    """
+    if existing is None:
+        return None
+    indices = [i for i in (existing.find(STATE_FENCE_OPEN), existing.find(STATE_FENCE_CLOSE)) if i != -1]
+    if not indices:
+        return None
+    return existing[: min(indices)]

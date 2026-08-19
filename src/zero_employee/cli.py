@@ -83,6 +83,7 @@ from .core import (
     find_sow_roots,
     render_state_zone,
     splice_state_zone,
+    salvage_state_prefix,
     intake_open_rows,
     build_ruling_index,
     render_ruling_index,
@@ -505,7 +506,33 @@ def _priority(root, *, top_n=3, near_m=3, json_out=False) -> int:
     return 0
 
 
-def _board(root) -> int:
+def _atomic_write_text(target: pathlib.Path, text: str) -> None:
+    """Write TARGET atomically: temp file in the same dir, then os.replace() over it.
+
+    Same technique as migrate.atomic_replace() (mkstemp beside the target + fsync +
+    os.replace), minus its compare-and-swap precondition — STATE.md is regenerated
+    WHOLE on every run rather than incrementally migrated, so there is no prior
+    content to verify against, only a partial write to prevent. An interrupted write
+    leaves the original file (or no file) in place; it can never leave a truncated one.
+    """
+    import tempfile
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    fd, name = tempfile.mkstemp(prefix=f".{target.name}.", suffix=".tmp", dir=target.parent)
+    temporary_path = pathlib.Path(name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temporary_path, target)
+        temporary_path = None
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+
+
+def _board(root, repair: bool = False) -> int:
     files_fm = []
     for f in iter_sow_files(root):
         fm = extract_frontmatter(f.read_text(encoding="utf-8", errors="replace"))
@@ -534,9 +561,17 @@ def _board(root) -> int:
     try:
         out = splice_state_zone(existing, zone, title=pathlib.Path(root).resolve().name)
     except ValueError as e:
-        print(f"FATAL: {e}", file=sys.stderr)
-        return 2
-    target.write_text(out, encoding="utf-8")
+        if not repair:
+            print(f"FATAL: {e}", file=sys.stderr)
+            return 2
+        # --repair (opt-in only, RULING-target of this stream): best-effort salvage of
+        # whatever hand-authored content sits before the first marker found, then a
+        # fresh well-formed fence. The default (non-repair) path above is UNCHANGED —
+        # still FATAL/exit-2/no-write — this branch only runs when the caller asked.
+        salvaged = salvage_state_prefix(existing)
+        out = splice_state_zone(salvaged, zone, title=pathlib.Path(root).resolve().name)
+        print(f"REPAIRED: {e}", file=sys.stderr)
+    _atomic_write_text(target, out)
     o = len([x for x in aw if not x.get("answered")])
     a = len(aw) - o
     print(f"board written: {target}")
@@ -1368,12 +1403,13 @@ def _cmd_next(argv: list[str]) -> int:
 
 
 def _cmd_board_alias(argv: list[str]) -> int:
+    repair = "--repair" in argv
     path = next((a for a in argv if not str(a).startswith("-")), None)
     root = _discover_root(path)
     if root is None:
         print("zeo board: couldn't find a corpus.", file=sys.stderr)
         return 2
-    return _board(root)
+    return _board(root, repair=repair)
 
 
 def _cmd_triage_alias(argv: list[str]) -> int:
@@ -2601,6 +2637,7 @@ def main(argv: list[str] | None = None) -> int:
     claude_md_override = None
     skill_path = None
     board = False
+    board_repair = False
     triage = False
     priority = False
     priority_top_n = 3
@@ -2631,6 +2668,9 @@ def main(argv: list[str] | None = None) -> int:
             i += 2
         elif args[i] == "--board":
             board = True
+            i += 1
+        elif args[i] == "--repair":
+            board_repair = True
             i += 1
         elif args[i] == "--commit-check-corpus":
             commit_check_corpus = True
@@ -3434,7 +3474,7 @@ def main(argv: list[str] | None = None) -> int:
     if priority:
         return _priority(root, top_n=priority_top_n, near_m=priority_near_m, json_out=want_json)
     if board:
-        return _board(root)
+        return _board(root, repair=board_repair)
     if commit_check_corpus:
         return _commit_check_corpus(root)
     if ruling_index:
