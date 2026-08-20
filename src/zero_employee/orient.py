@@ -1086,7 +1086,7 @@ Govern work after identity (project + stream) is known.
   zeo sow from-intake FILE          Alias for intake promote
   zeo scaffold <project> <stream>  Project CLAUDE.md + first SOW
 
-See also: zeo new  ·  zeo doctor  ·  zeo help --all
+See also: zeo new  ·  zeo doctor  ·  zeo help status  ·  zeo help --all
 """,
     "rulings": """ZEO HELP · rulings
 
@@ -1150,6 +1150,44 @@ See also: zeo help --all
 
 Indexes are navigation, not evidence. Legacy aliases remain supported.
 """,
+    "status": """ZEO HELP · status
+
+The `status:` field names WHERE THE WORK IS. 13 values (schemas/common.py
+STATUS_ENUM), split into two families:
+
+WORKING — owed attention, may never be a chain's last word at a paused commit:
+  DRAFT             Not yet real work — a placeholder or stub.
+  DESIGN            Root-causing / proposing a shape; nothing built yet.
+  PROGRESS          Actively being built.
+  RULING-REQUESTED  A fork is posed to Master/Sparring; stream keeps working
+                     in any direction the open question doesn't fence.
+
+RESTING — terminal/done, not a stream's last WORKING word:
+  HELD              A *chosen* wait on sequencing (e.g. "behind D1's merge").
+                     Healthy, not stuck — distinct from BLOCKED.
+  BLOCKED           An *external obstruction* (e.g. a foreign gate is red).
+                     Needs attention, unlike HELD.
+  SHIPPED           Code/work landed AND was verified (prefer this over "done").
+  FINDING           A verified *observation* from a RECON, not a landed change.
+  CLOSEOUT          The stream itself wound down — may carry no code of its
+                     own (e.g. a stream that only ever produced findings).
+  HANDOVER          Waiting to be picked up by a successor.
+  SUPERSEDED        Superseded by a later rev or a different chain.
+  VOIDED            Retracted; no longer operative.
+  STALE             Aged out without a resolving action.
+
+RESTING is not monolithic. HELD, HANDOVER, and BLOCKED are RESTING by the
+schema's crude WORKING/RESTING binary, but all three still want eyes —
+"paused," not "done." `zeo --triage` already draws the finer, operationally
+correct line in production: it buckets HELD/HANDOVER as PAUSED and BLOCKED
+as BLOCKED, separately from a true RESTING bucket (CLOSEOUT, SHIPPED,
+SUPERSEDED, VOIDED, STALE, FINDING). This page teaches the SCHEMA's own
+two-way split; `zeo --triage` (or `zeo triage`) is the more accurate
+operational read of which streams actually need a look today — run that,
+not this, when deciding whom to help next.
+
+See also: zeo triage  ·  zeo help sow  ·  zeo help --all
+""",
 }
 
 
@@ -1168,6 +1206,7 @@ Getting started
 Workflows
   zeo help intake
   zeo help sow
+  zeo help status
   zeo help rulings
   zeo help doctrine
 

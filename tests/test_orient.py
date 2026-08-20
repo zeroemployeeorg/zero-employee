@@ -103,6 +103,30 @@ def test_help_progressive(capsys):
     assert "Getting started" in capsys.readouterr().out
 
 
+def test_help_status_vocabulary(capsys):
+    """help-status-vocabulary: the status enum must be discoverable from `zeo help`
+    itself, not only by reading source or sow-authoring-SKILL.md. `zeo help status`
+    names all 13 STATUS_ENUM values, the WORKING/RESTING split, and points at
+    `--triage`'s finer paused/blocked bucketing as the operational read."""
+    from zero_employee.schemas.common import STATUS_ENUM, STATUS_RESTING, STATUS_WORKING
+
+    assert cli.main(["help"]) == 0
+    root = capsys.readouterr().out
+    assert "zeo help status" in root
+
+    assert cli.main(["help", "status"]) == 0
+    out = capsys.readouterr().out
+    for value in STATUS_ENUM:
+        assert value in out
+    for value in STATUS_WORKING:
+        assert value in out
+    for value in STATUS_RESTING:
+        assert value in out
+    assert "WORKING" in out
+    assert "RESTING" in out
+    assert "--triage" in out
+
+
 def test_work_listing(tmp_path, monkeypatch, capsys):
     root = _corpus(tmp_path)
     _sow(root, "zero-employee", "doctrine-migration", status="DESIGN")
