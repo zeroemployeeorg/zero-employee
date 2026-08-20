@@ -1179,7 +1179,30 @@ so --board and --inbox need NO path when you're in or near the repo.
 Legacy aliases remain supported (--board, --triage, --stream-index, --ruling-index, --digest, --mint)."""
 
 
+def _wants_help(argv: list[str]) -> bool:
+    """RULING-329: a shared, explicit -h/--help check for any mutating verb whose own
+    positional-argument requirements are too loose to catch a bare --help by accident
+    (e.g. `init`/`equip` both accept ZERO required positionals - a bare `zeo init`
+    is legitimate, "scaffold cwd" - so `--help` alone used to fall through
+    `positionals = [a for a in argv if not a.startswith("-")]` as an EMPTY list,
+    indistinguishable from "no target given, use cwd", and the real mutation ran.
+    MEASURED live: `zeo init --help` in an empty directory wrote a full corpus scaffold
+    to disk instead of printing usage. Any verb whose argument-count check alone cannot
+    already reject a bare --help (scaffold/bridges are safe BY ACCIDENT - they both
+    require a non-optional positional/flag argv --help can never satisfy) must call
+    this before touching disk."""
+    return "-h" in argv or "--help" in argv
+
+
 def _cmd_init(argv: list[str]) -> int:
+    if _wants_help(argv):
+        print(
+            "Usage: zeo init [path] [--cursor] [--gemini] [--claude] [--agents] [--all]\n"
+            "  Scaffold a corpus: claude-md/CLAUDE.md marker + root CLAUDE.md.\n"
+            "  path defaults to the current directory. Read-only with -h/--help.",
+            file=sys.stderr,
+        )
+        return 0
     tools = parse_tool_flags(argv)
     positionals = [a for a in argv if not str(a).startswith("-")]
     target = pathlib.Path(positionals[0]).resolve() if positionals else pathlib.Path(".").resolve()
@@ -1734,6 +1757,14 @@ def _cmd_equip(argv: list[str]) -> int:
     --gates / override layer / --resync-check visibility / --all are NOT
     built here -- steps 3-6 of the charter, out of scope for this verb today.
     """
+    if _wants_help(argv):
+        print(
+            "Usage: zeo equip [repo] [--force] [--diff]\n"
+            "  Install the ALWAYS-tier .claude/ + CLAUDE.md files into a work repo.\n"
+            "  repo defaults to the current directory. Read-only with -h/--help.",
+            file=sys.stderr,
+        )
+        return 0
     force = "--force" in argv
     show_diff = "--diff" in argv
     if force and show_diff:
