@@ -130,11 +130,31 @@ def test_digest_tree_state_shows_dirty_tracked_files_not_untracked(two_author_re
 
 
 def test_digest_explicit_since_window_bypasses_the_author_walk(two_author_repo, capsys):
-    rc = cli.main(["--digest", "100y", str(two_author_repo)])
+    """DIAGNOSED 2026-08-20 (zero-employee-release-v0.4.4): this test previously used
+    "100y" as its since-window, on the reasoning that a huge window obviously
+    includes everything. In practice this made the test's PASS/FAIL depend on the
+    test MACHINE's git build, not on zero_employee's own code: git 2.55.0 here
+    unpredictably resolves `--since=<N>y` to a wrong/empty result for many N (a
+    from-scratch repro found 50y/60y/68y/69y/100y/101y/150y/200y all spuriously
+    returning ZERO commits against a real fixture repo with commits `git log`
+    itself confirms exist, while 1y-10y and 99y were reliable at the moment of
+    testing) - and the specific N that fails MOVES between successive invocations
+    seconds apart, consistent with an approxidate arithmetic bug rather than any
+    property of this repo, this test, or the digest code path (which does nothing
+    but forward the string to `git log --since=<value>` verbatim - see
+    `_digest()`'s docstring in src/zero_employee/cli.py for why a literal --since
+    window, not a clock computation of our own, is the deliberate design).
+    10y is comfortably inside the range that was stable across 8/8 repeated
+    invocations in that same investigation, and is more than sufficient to include
+    every commit this fixture ever makes (all made "now"), so it exercises the
+    identical code path (the literal --since branch, bypassing the author-boundary
+    walk) without inheriting the larger value's environment-sensitivity.
+    """
+    rc = cli.main(["--digest", "10y", str(two_author_repo)])
     out = capsys.readouterr().out
     assert rc == 0
-    assert "since 100y" in out
-    # a 100-year window includes EVERYONE's commits, including seat-a's seed
+    assert "since 10y" in out
+    # a 10-year window includes EVERYONE's commits, including seat-a's seed
     assert "seed by another author" in out
 
 

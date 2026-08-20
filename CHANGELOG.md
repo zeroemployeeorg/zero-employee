@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.4.3] - 2026-08-20
+## [0.4.4] - 2026-08-20
 
 ### Fixed
 - **Bare `zeo --mint` no longer misreports as an unrecognized flag.** The argv
@@ -51,6 +51,20 @@
   it. Two regression tests pin the new behavior and its fail-closed
   counterpart. (root-caused via `RULING-331`'s own investigation; fixed in
   `triage-resolved-by-chain-walk#1`)
+
+### Added
+- **`zeo help status` — the SOW status vocabulary is now discoverable from the
+  tool's own help surface.** A stream wanting to know what `status:` values
+  exist, and which are WORKING (owed attention) vs RESTING (terminal), had to
+  independently locate `sow-authoring-SKILL.md`'s own `status: enum` section or
+  read `schemas/common.py` directly — neither reachable from `zeo --help` or
+  `zeo help --all`. The new topic lists all 13 `STATUS_ENUM` values grouped
+  WORKING/RESTING with a one-line meaning each, and names that RESTING is not
+  monolithic — HELD/HANDOVER/BLOCKED still want eyes, matching `--triage`'s own
+  finer PAUSED/BLOCKED bucketing, which the page points to as the more accurate
+  operational read rather than re-deciding it. Listed under `zeo help`'s
+  "Workflows" section and cross-linked from `zeo help sow`.
+  (`src/zero_employee/orient.py`; `help-status-vocabulary#1`)
 
 ## [0.4.1] - 2026-08-20
 
