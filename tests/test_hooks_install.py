@@ -22,7 +22,15 @@ def _corpus(tmp_path):
     root = tmp_path / "org"
     (root / "claude-md").mkdir(parents=True)
     (root / "claude-md" / "CLAUDE.md").write_text("# CLAUDE\n", encoding="utf-8")
-    subprocess.run(["git", "init"], cwd=root, check=True, capture_output=True)
+    # branch-gates (RULING-324): every real corpus repo in this org uses `main` as
+    # trunk (org, zero-employee, ducktyper all confirmed) and the pre-commit gate's
+    # trunk-only refusal (hooks.check_trunk_only) checks against it by default.
+    # `-b main` here matches that real convention -- an unqualified `git init` picks
+    # up whatever `init.defaultBranch` the RUNNING MACHINE happens to have configured
+    # (this test runner's default is `master`), which is not representative of any
+    # real corpus and would spuriously trip the trunk-only refusal on every fixture
+    # commit below.
+    subprocess.run(["git", "init", "-b", "main"], cwd=root, check=True, capture_output=True)
     subprocess.run(
         ["git", "-C", str(root), "config", "user.email", "test@example.com"],
         check=True,
@@ -215,7 +223,7 @@ def test_pre_commit_allows_a_collision_reconciled_by_a_later_supersedes(tmp_path
     successor_fm = (
         "---\nsow: teststream\nproject: demo\nn: 11\nrev: 10\nsupersedes: 10\n"
         "schema_rev: 17\ncreated: 2026-08-16\nupdated: 2026-08-16\nstatus: HANDOVER\n"
-        "lifecycle: RESTING\nissue_first: true\nledger: []\n---\n\n"
+        "lifecycle: RESTING\nissue_first: true\nrequested_by: teststream#10\nledger: []\n---\n\n"
         "supersedes both TESTSTREAM-SOW-10-first.md and TESTSTREAM-SOW-10-second.md\n"
     )
     successor = sow_dir / "TESTSTREAM-SOW-11-reconciled.md"
@@ -252,7 +260,7 @@ def test_pre_commit_allows_a_legitimate_rev_chain_no_collision(tmp_path):
     subprocess.run(["git", "-C", str(root), "add", str(first)], check=True, capture_output=True)
     subprocess.run(["git", "-C", str(root), "commit", "-m", "rev a"], check=True, capture_output=True)
 
-    fm_b = fm_a.replace("rev: a", "rev: b").replace("rev a", "rev b")
+    fm_b = fm_a.replace("rev: a", "rev: b\nrequested_by: teststream#1").replace("rev a", "rev b")
     second = sow_dir / "TESTSTREAM-SOW-1-b.md"
     second.write_text(fm_b, encoding="utf-8")
     subprocess.run(["git", "-C", str(root), "add", str(second)], check=True, capture_output=True)

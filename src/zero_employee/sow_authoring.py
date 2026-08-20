@@ -717,7 +717,14 @@ def doctor_file(path: pathlib.Path, *, root: pathlib.Path | None = None) -> tupl
         SowWriteFrontmatter.model_validate(fm)
         oks.append("required fields complete")
     except ValidationError as exc:
-        fails.append(f"required fields incomplete: {exc.errors()[0].get('msg')}")
+        # RULING-325 §4: `exc.errors()[0]['loc']` (the actual field PATH) was previously
+        # discarded — only `.get('msg')` (Pydantic's generic "Field required") was read,
+        # so a seat hitting this had to reverse-engineer which field from source. Name
+        # every missing field, not just the first, so one doctor run surfaces the whole
+        # defect instead of a single fix-rerun-refail cycle per field.
+        for err in exc.errors():
+            loc = ".".join(str(x) for x in err.get("loc", ())) or "<root>"
+            fails.append(f"required field missing: {loc} ({err.get('msg')})")
 
     canon = find_canonical_claude_md(root)
     current_rev = parse_current_rev(canon.read_text(encoding="utf-8", errors="replace")) if canon else SCHEMA_REV

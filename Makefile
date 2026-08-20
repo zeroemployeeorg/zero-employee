@@ -146,6 +146,10 @@ dogfood: ## Run zeo against sovereignagents sows repo
 	@echo "${BLUE}Dogfooding zeo...${RESET}"
 	@if [ -d "../sovereignagents-sows" ]; then $(UV) run zeo ../sovereignagents-sows; elif [ -d "../org" ]; then $(UV) run zeo ../org; else echo "${YELLOW}No target corpus found at ../sovereignagents-sows or ../org${RESET}"; fi
 
+.PHONY: check-base-fresh
+check-base-fresh: ## branch-gates (RULING-324): fail if HEAD's merge-base with origin/main is behind main's tip
+	@$(UV) run zeo check-base-fresh .
+
 .PHONY: install-tool
 install-tool: ## Install zeo CLI globally via uv tool
 	@echo "${BLUE}Installing zero-employee as global uv tool...${RESET}"

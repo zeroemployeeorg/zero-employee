@@ -104,6 +104,9 @@ from .core import (
     git_ref_state,
     format_ref_disclosure,
     open_questions_summary,
+    classify_all_branches,
+    LIVE_BEHIND_THRESHOLD,
+    check_base_fresh,
 )
 
 _SYM = {ERROR: "✗", WARN: "⚠", HINT: "→"}
@@ -1412,6 +1415,108 @@ def _cmd_board_alias(argv: list[str]) -> int:
     return _board(root, repair=repair)
 
 
+def _cmd_branches(argv: list[str]) -> int:
+    """zeo branches [path] [--trunk NAME] [--json]
+
+    Classifies every branch (excluding trunk) in the git repo at `path` (default:
+    cwd, walked up like every other verb) into exactly one of the five RULING-324
+    states: LIVE / STALE-BASE / ORPHANED / MERGED / RESCUE. REPORTS ONLY — this
+    verb never mutates, never deletes, never touches a ref. Charter's own explicit
+    line: "never auto-delete, rescue/* least of all."
+
+    Note this operates on a plain git repo, not necessarily a SOW corpus — unlike
+    board/triage/digest it does NOT require `claude-md/CLAUDE.md` to resolve `path`
+    (a work_repo like zero-employee or ducktyper is a valid, expected target and
+    carries no such marker). An explicit path (or cwd) is used as-is if it is a git
+    repo; the corpus-marker walk-up is only a fallback for the bare, no-path case.
+    """
+    positionals = [a for a in argv if not str(a).startswith("-")]
+    trunk = "main"
+    want_json = "--json" in argv
+    if "--trunk" in argv:
+        ti = argv.index("--trunk")
+        if ti + 1 < len(argv):
+            trunk = argv[ti + 1]
+            if trunk in positionals:
+                positionals.remove(trunk)
+    path = positionals[0] if positionals else None
+    root = pathlib.Path(path).resolve() if path else pathlib.Path(".").resolve()
+    toplevel = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "--show-toplevel"],
+        capture_output=True,
+        text=True,
+    )
+    if toplevel.returncode != 0:
+        print(f"zeo branches: {root} is not a git repo.", file=sys.stderr)
+        return 2
+    root = pathlib.Path(toplevel.stdout.strip())
+
+    rows = classify_all_branches(root, trunk=trunk)
+    if want_json:
+        import json
+
+        print(json.dumps({"root": str(root), "trunk": trunk, "branches": rows}, indent=2))
+        return 0
+
+    print(f"branches: {root}  (trunk=origin/{trunk}, LIVE_BEHIND_THRESHOLD={LIVE_BEHIND_THRESHOLD})")
+    if not rows:
+        print("  (no branches other than trunk)")
+        return 0
+    width = max(len(r["branch"]) for r in rows)
+    for r in rows:
+        ab = f"ahead={r['ahead']}, behind={r['behind']}" if r["ahead"] is not None else "ahead=?, behind=?"
+        print(f"  {r['branch']:<{width}}  {r['state']:<11}  {ab}")
+    counts: dict[str, int] = {}
+    for r in rows:
+        counts[r["state"]] = counts.get(r["state"], 0) + 1
+    print("  --")
+    print("  " + ", ".join(f"{k}={v}" for k, v in sorted(counts.items())))
+    return 0
+
+
+def _cmd_check_base_fresh(argv: list[str]) -> int:
+    """zeo check-base-fresh [path] [--trunk NAME]
+
+    branch-gates charter item 3. Exit 0 when HEAD's merge-base with origin/<trunk>
+    IS origin/<trunk>'s current tip (nothing to rebase onto); exit 1 when it is NOT
+    (stale — rebase before continuing); exit 2 when freshness cannot be determined
+    (no origin/<trunk> ref, unreadable HEAD, unrelated history) — a caller that
+    cannot prove freshness must not report success. Designed for a boot-time
+    one-liner (see `make check-base-fresh`) so a seat's FIRST act can fail loudly
+    on a stale base rather than build on one silently.
+    """
+    positionals = [a for a in argv if not str(a).startswith("-")]
+    trunk = "main"
+    if "--trunk" in argv:
+        ti = argv.index("--trunk")
+        if ti + 1 < len(argv):
+            trunk = argv[ti + 1]
+            if trunk in positionals:
+                positionals.remove(trunk)
+    path = positionals[0] if positionals else None
+    root = pathlib.Path(path).resolve() if path else pathlib.Path(".").resolve()
+    toplevel = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "--show-toplevel"],
+        capture_output=True,
+        text=True,
+    )
+    if toplevel.returncode != 0:
+        print(f"zeo check-base-fresh: {root} is not a git repo.", file=sys.stderr)
+        return 2
+    root = pathlib.Path(toplevel.stdout.strip())
+
+    result = check_base_fresh(root, trunk=trunk)
+    if result["fresh"] is None:
+        print(f"check-base-fresh: UNKNOWN — {result['reason']}", file=sys.stderr)
+        return 2
+    if result["fresh"]:
+        print(f"check-base-fresh: FRESH — {result['reason']}")
+        return 0
+    print(f"check-base-fresh: STALE — {result['reason']}", file=sys.stderr)
+    print(f"  Fix: git fetch origin && git rebase {result['trunk_ref']}", file=sys.stderr)
+    return 1
+
+
 def _cmd_triage_alias(argv: list[str]) -> int:
     path = next((a for a in argv if not str(a).startswith("-")), None)
     root = _discover_root(path)
@@ -2583,6 +2688,10 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_next(args[1:])
     if args and args[0] == "board":
         return _cmd_board_alias(args[1:])
+    if args and args[0] == "branches":
+        return _cmd_branches(args[1:])
+    if args and args[0] == "check-base-fresh":
+        return _cmd_check_base_fresh(args[1:])
     if args and args[0] == "triage":
         return _cmd_triage_alias(args[1:])
     if args and args[0] == "digest":
@@ -3792,6 +3901,18 @@ def _typer_next(ctx: typer.Context):
 def _typer_board(ctx: typer.Context):
     """Write local STATE.md (gitignored). Legacy alias: zeo --board."""
     raise typer.Exit(main(["board", *ctx.args]))
+
+
+@app.command("branches", **_PASSTHROUGH)
+def _typer_branches(ctx: typer.Context):
+    """Classify every branch as LIVE/STALE-BASE/ORPHANED/MERGED/RESCUE (RULING-324). Report-only."""
+    raise typer.Exit(main(["branches", *ctx.args]))
+
+
+@app.command("check-base-fresh", **_PASSTHROUGH)
+def _typer_check_base_fresh(ctx: typer.Context):
+    """Exit non-zero when HEAD's merge-base with origin/main is behind main's tip."""
+    raise typer.Exit(main(["check-base-fresh", *ctx.args]))
 
 
 @app.command("triage", **_PASSTHROUGH)

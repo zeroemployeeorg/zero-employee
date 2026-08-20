@@ -684,6 +684,7 @@ def lint_file(
     findings += check_project(path, fm, root)
     findings += check_b2(path, fm, root)
     findings += check_sow_repo_placeholder(path, fm, root)
+    findings += check_requested_by_presence(fm, commit_mode=commit_mode)
     if any(f.severity == ERROR for f in findings):
         return "FAIL", findings
     # CANNOT-GRADE (Sparring doctrine): the file declares schema-era intent but the linter
@@ -1775,6 +1776,61 @@ def check_sow_repo_placeholder(path, fm, root=None) -> list[Finding]:
                 "never filled in. Fix: set work_repo to the real work repo name or path",
             )
         )
+    return out
+
+
+def check_requested_by_presence(fm, *, commit_mode=False) -> list[Finding]:
+    """RULING-325: `requested_by:` is required by `SowWriteFrontmatter` (the write-side
+    model `zeo doctor` validates against, no default) but was never enforced on the
+    READ/lint side — `check_requested_by` (above) grades the FORM of the field when
+    present, but silently returns `[]` when the field is simply ABSENT. That gap let 10
+    real SOWs land missing it in one 6-hour window, across two Masters, all filed at the
+    current schema — RULING-325 §1's measured evidence, not a hypothetical.
+
+    Era-aware, same idiom as `check_schema_rev`'s own `schema-missing` (WARN, "required
+    from Rev 11 on") — NOT a retroactive fail on the whole corpus:
+      - no `schema_rev:` AND no `n:` at all -> PRE-SCHEMA file, no opinion (silent).
+        Mirrors check_schema_rev's own gate: a file with neither marker predates the
+        schema entirely and this check has nothing to grade it against.
+      - `schema_rev:` present (any value) but `requested_by:` absent -> the file
+        declares itself schema-era, so the field applies. WARN always (a landed file
+        is immutable under append-don't-revert, RULING-004 §5 / RULING-325 §6 — the
+        ten already-missing files are NOT to be edited); FAIL only under commit_mode
+        (gating a NEW commit, matching doctor's own requirement and the
+        `working-no-done-when` / `working-no-restaufwand` severity pattern above).
+      - `requested_by:` present (any non-empty value, any form) -> this function is
+        silent; `check_requested_by` grades its FORM separately.
+
+    Distinguishing `requested_by:` from `supersedes:` (RULING-325 §1's measured failure
+    shape — all ten broken files cited their governing ruling/charter in `supersedes:`
+    instead) is a DOCS fix (sow-authoring-SKILL.md), not something this lint function
+    can enforce structurally: `supersedes:` legitimately holds a ruling/charter name on
+    a chain's genesis SOW in some historical corners, so a mechanical "supersedes looks
+    like a ruling, therefore fail" rule would false-positive. Named here for the reader,
+    resolved in the skill.
+    """
+    out: list[Finding] = []
+    rb = fm.get("requested_by")
+    has_rb = rb is not None and str(rb).strip() != ""
+    if has_rb:
+        return out  # present — check_requested_by (form) is the only remaining grader
+    schema_rev = fm.get("schema_rev")
+    n = fm.get("n")
+    if schema_rev is None and n is None:
+        return out  # pre-schema file — no opinion, same gate check_schema_rev uses
+    sev = ERROR if commit_mode else WARN
+    out.append(
+        Finding(
+            sev,
+            "requested_by-missing",
+            "requested_by: is absent — required from the schema this file declares "
+            f"(schema_rev: {schema_rev!r}). Not a ghost/legacy-form question (that's "
+            "check_requested_by's job when the field IS present) — the field is simply "
+            "missing. Fix: add requested_by: naming who/what asked for this work "
+            "(<stream>#<n>, a path[+reason], comma-separated, or an operator form) — "
+            "never confuse it with supersedes: (the prior REV in THIS chain).",
+        )
+    )
     return out
 
 
@@ -3887,6 +3943,328 @@ def format_ref_disclosure(state):
     else:
         bits.append(f"- NOT contained in origin/{trunk} (this state is NOT yet visible to the fleet)")
     return " ".join(bits)
+
+
+# ── branch-gates: the five-state taxonomy, RULING-324 ─────────────────────
+# LIVE / STALE-BASE / ORPHANED / MERGED / RESCUE, ratified by RULING-324 from
+# branch-gates#2 and branch-sweep#2's independently-converged git-derivable reading,
+# with two corrections RULING-324 §2 forced (both applied below, not reinvented here):
+#   (1) LIVE is a THRESHOLD (behind <= N), never an equality — RULING-324's own survey
+#       found ZERO of ~50 real branches at behind==0, including same-day commits.
+#   (2) STALE-BASE beats ORPHANED when a branch satisfies both — a measured git fact
+#       (real unmerged commits) outranks an inferred one (no recent driving activity).
+#
+# LIVE_BEHIND_THRESHOLD (N): the implementer's call per RULING-324 §3. Set to 20 commits
+# behind origin/<trunk>. Reasoning: branch-gates#2's own survey (SOW-2 §3) is the only
+# real data point — the freshest unmerged branch found anywhere in the sample
+# (ducktyper's `covers/variant-recency-guard`) sat at behind=10 and was read as "closest
+# thing to LIVE in the sample"; the next rung up (`feat/covers-palette-preference-gp`)
+# sat at behind=79 and read STALE-BASE. The true boundary is somewhere in (10, 79] and
+# unmeasurable more precisely from one survey. 20 is chosen as a round number close to
+# the observed LIVE-ish end (2x the one confirmed-fresh sample) rather than the
+# STALE-BASE end, on the theory that a false LIVE (a branch that's actually drifting,
+# mislabeled fresh) is more actionable-safe than a false STALE-BASE (an actively-worked
+# branch told to rebase when it doesn't need to yet) — ties break toward not nagging an
+# active worker. A commit-count threshold, not a time window: time-since-commit needs a
+# per-repo cadence baseline this stream doesn't have data for, while commit-count reuses
+# the exact ahead/behind mechanism already hand-verified across four repos (SOW-2 §3/§4).
+LIVE_BEHIND_THRESHOLD = 20
+
+
+def _git(root, *args):
+    r = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True)
+    return r.returncode, r.stdout.strip(), r.stderr.strip()
+
+
+def list_branches(root, trunk="main"):
+    """Every local AND remote-tracking branch except trunk itself and its own
+    remote-tracking ref, as `{"name": ..., "remote": bool}`. Remote-only branches
+    (never checked out locally) are real, git-derivable branch state — SOW-2's own
+    survey found MERGED/RESCUE examples that were remote-only — so they are included,
+    not skipped just because there is no local ref.
+    """
+    out = []
+    seen = set()
+    rc, sha_out, _ = _git(root, "for-each-ref", "--format=%(refname:short)", "refs/heads/")
+    if rc == 0:
+        for name in sha_out.splitlines():
+            name = name.strip()
+            if not name or name == trunk:
+                continue
+            out.append({"name": name, "remote": False})
+            seen.add(name)
+    # MEASURED (branch-gates SOW-3 smoke test against zeroemployeeorg/org):
+    # refs/remotes/origin/HEAD is a SYMBOLIC ref whose %(refname:short) prints as the
+    # bare "origin" (not "origin/HEAD") — filtering on the short-form string "origin/HEAD"
+    # silently misses it, and it showed up as a fake branch named "origin",
+    # ahead=0/behind=0/MERGED. Fixed by pairing the FULL refname with the short form and
+    # filtering on the full one, which cannot collide with any real branch name.
+    rc, ref_out, _ = _git(root, "for-each-ref", "--format=%(refname)\t%(refname:short)", "refs/remotes/origin/")
+    if rc == 0:
+        for line in ref_out.splitlines():
+            line = line.strip()
+            if not line or "\t" not in line:
+                continue
+            full, name = line.split("\t", 1)
+            if full == "refs/remotes/origin/HEAD" or name == f"origin/{trunk}":
+                continue
+            short = name[len("origin/") :] if name.startswith("origin/") else name
+            # a remote ref whose short name matches an already-listed local branch is the
+            # SAME branch (local tracking it) — do not double-report it as a second row.
+            if short in seen:
+                continue
+            out.append({"name": name, "remote": True})
+            seen.add(name)
+    return out
+
+
+# ORPHANED_AGE_DAYS: the implementer's own threshold for "no recent related activity"
+# (RULING-324 §1's ORPHANED text), orthogonal to the LIVE/STALE-BASE ahead/behind
+# commit-count split. Design note (why a separate signal exists at all): RULING-324 §2
+# says STALE-BASE's condition (ahead>0, base drifted) and ORPHANED's condition (no
+# recent activity) genuinely OVERLAP and STALE-BASE wins whenever both hold — so
+# deriving ORPHANED purely from ahead/behind (as an initial draft of this function did)
+# made ORPHANED UNREACHABLE: any ahead>0 branch beyond the LIVE threshold already
+# satisfies STALE-BASE's condition and would always win the tie, leaving no git shape
+# for ORPHANED to ever occupy. ORPHANED needs a signal STALE-BASE's own predicate
+# does not read: the LAST-COMMIT AGE, not the commit-count-behind-trunk. A branch whose
+# newest commit is itself very old (no one has touched it in ORPHANED_AGE_DAYS) reads as
+# "no recent activity" even before checking commit-count drift; a branch actively
+# committed to recently, however far behind trunk, is legibly "someone is still driving
+# this" (STALE-BASE: rebase-and-continue) rather than "no one is" (ORPHANED: maybe
+# abandoned). 30 days chosen as a round, generous window — long enough that a stream
+# on a short pause (a held ruling-request, a sequencing wait) isn't mislabeled abandoned,
+# short enough to catch branches nobody has touched in a month. Per RULING-324 §2's
+# precedence, ORPHANED-by-age is STILL overridden by STALE-BASE when age is fresh — i.e.
+# a branch only reaches ORPHANED when it has real unmerged content (so it isn't MERGED)
+# AND that content is stale (beyond live_threshold) AND its last commit itself predates
+# ORPHANED_AGE_DAYS. A branch stale-by-commit-count but recently touched is STALE-BASE
+# (the measured, harder fact per RULING-324 §2's own reasoning: still-active work,
+# rebase-actionable) — exactly the ruling's stated precedence, not a workaround of it.
+ORPHANED_AGE_DAYS = 30
+
+
+def classify_branch(
+    root, branch, trunk="main", live_threshold=LIVE_BEHIND_THRESHOLD, orphan_age_days=ORPHANED_AGE_DAYS
+):
+    """Classify ONE branch into exactly one of the five RULING-324 states.
+
+    Returns a dict: {"branch", "state", "ahead", "behind", "merged", "reason"}.
+    `ahead`/`behind` are None when undeterminable (no merge-base — unrelated histories
+    or an unreachable ref); `state` is then reported as UNKNOWN rather than guessed —
+    the same fail-closed shape `git_ref_state` already uses for `contained_in_trunk`.
+
+    Precedence, per RULING-324 §1/§2, applied in this order:
+      1. RESCUE   — `rescue/*` naming, checked FIRST: the charter's own text is
+                     "never auto-delete, rescue/* least of all," so a rescue branch
+                     must never fall through to a different label by git-state accident
+                     (e.g. a rescue/* branch that also happens to be ahead==0 is still
+                     RESCUE, not silently MERGED into a maybe-prunable bucket).
+      2. MERGED   — ahead == 0 (fully absorbed into trunk).
+      3. LIVE     — ahead > 0, behind <= live_threshold: active, base still fresh.
+      4. STALE-BASE vs ORPHANED — RULING-324 §2's tie, broken by an AGE signal
+         orthogonal to ahead/behind (see ORPHANED_AGE_DAYS docstring above): a stale
+         branch (behind > live_threshold) whose last commit is RECENT (within
+         orphan_age_days) is STALE-BASE — someone is still driving it, rebase-
+         actionable, the measured/harder fact per the ruling. A stale branch whose
+         last commit is ALSO old (beyond orphan_age_days — no recent activity, the
+         ruling's own ORPHANED text verbatim) is ORPHANED.
+    """
+    trunk_ref = f"origin/{trunk}"
+    rc, _, _ = _git(root, "rev-parse", "--verify", "--quiet", trunk_ref)
+    if rc != 0:
+        return {
+            "branch": branch,
+            "state": "UNKNOWN",
+            "ahead": None,
+            "behind": None,
+            "merged": None,
+            "reason": f"no {trunk_ref} ref found — cannot compute ahead/behind",
+        }
+
+    short = branch[len("origin/") :] if branch.startswith("origin/") else branch
+
+    # RESCUE — naming convention, checked before any git-state read (per doctrine above).
+    if short.startswith("rescue/"):
+        rc_m, _, _ = _git(root, "merge-base", "--is-ancestor", branch, trunk_ref)
+        return {
+            "branch": branch,
+            "state": "RESCUE",
+            "ahead": None,
+            "behind": None,
+            "merged": rc_m == 0,
+            "reason": "rescue/* naming convention — never auto-delete (charter, RULING-324 §1)",
+        }
+
+    rc_b, base, _ = _git(root, "merge-base", branch, trunk_ref)
+    if rc_b != 0 or not base:
+        return {
+            "branch": branch,
+            "state": "UNKNOWN",
+            "ahead": None,
+            "behind": None,
+            "merged": None,
+            "reason": "no merge-base with trunk (unrelated history or unreachable ref)",
+        }
+    rc_a, ahead_out, _ = _git(root, "rev-list", "--count", f"{base}..{branch}")
+    rc_bh, behind_out, _ = _git(root, "rev-list", "--count", f"{base}..{trunk_ref}")
+    if rc_a != 0 or rc_bh != 0:
+        return {
+            "branch": branch,
+            "state": "UNKNOWN",
+            "ahead": None,
+            "behind": None,
+            "merged": None,
+            "reason": "rev-list --count failed",
+        }
+    ahead = int(ahead_out)
+    behind = int(behind_out)
+    rc_anc, _, _ = _git(root, "merge-base", "--is-ancestor", branch, trunk_ref)
+    merged = rc_anc == 0
+
+    # MERGED — fully absorbed, zero unique commits.
+    if ahead == 0:
+        return {
+            "branch": branch,
+            "state": "MERGED",
+            "ahead": ahead,
+            "behind": behind,
+            "merged": merged,
+            "reason": "ahead == 0 against trunk — fully absorbed",
+        }
+
+    stale = behind > live_threshold
+
+    # LIVE — active, base still within the freshness threshold.
+    if not stale:
+        return {
+            "branch": branch,
+            "state": "LIVE",
+            "ahead": ahead,
+            "behind": behind,
+            "merged": merged,
+            "reason": f"ahead={ahead}, behind={behind} <= {live_threshold} (LIVE_BEHIND_THRESHOLD)",
+        }
+
+    # Stale by commit-count (behind > live_threshold). RULING-324 §2's tie between
+    # STALE-BASE and ORPHANED is broken here by an AGE signal (see ORPHANED_AGE_DAYS
+    # docstring): last-commit recency, not commit-count, is what tells "still being
+    # driven" (STALE-BASE) from "no recent activity" (ORPHANED, the ruling's own text).
+    rc_age, age_out, _ = _git(root, "log", "-1", "--format=%ct", branch)
+    last_commit_days = None
+    if rc_age == 0 and age_out.strip():
+        try:
+            last_ts = int(age_out.strip())
+            last_commit_days = (datetime.datetime.now(datetime.timezone.utc).timestamp() - last_ts) / 86400.0
+        except ValueError:
+            last_commit_days = None
+
+    if last_commit_days is not None and last_commit_days > orphan_age_days:
+        return {
+            "branch": branch,
+            "state": "ORPHANED",
+            "ahead": ahead,
+            "behind": behind,
+            "merged": merged,
+            "reason": (
+                f"behind={behind} > {live_threshold} AND last commit {last_commit_days:.1f}d ago "
+                f"> {orphan_age_days}d — no recent activity (RULING-324 §1 ORPHANED; "
+                "STALE-BASE's own condition also holds here, but ORPHANED's age signal is what "
+                "the ruling contrasts it against, not a second content check)"
+            ),
+        }
+
+    # STALE-BASE — real unmerged content, base drifted, but recently touched (or age
+    # undeterminable — fail toward the measured, harder-evidence state per RULING-324 §2's
+    # own reasoning, rather than guessing ORPHANED from an unknown).
+    age_note = f"last commit {last_commit_days:.1f}d ago" if last_commit_days is not None else "commit age unknown"
+    return {
+        "branch": branch,
+        "state": "STALE-BASE",
+        "ahead": ahead,
+        "behind": behind,
+        "merged": merged,
+        "reason": (
+            f"ahead={ahead} > 0, behind={behind} > {live_threshold} — real unmerged content, "
+            f"base drifted, {age_note} (<= {orphan_age_days}d or unknown — STALE-BASE precedes "
+            "ORPHANED per RULING-324 §2)"
+        ),
+    }
+
+
+def classify_all_branches(root, trunk="main", live_threshold=LIVE_BEHIND_THRESHOLD, orphan_age_days=ORPHANED_AGE_DAYS):
+    """Every branch in ROOT (excluding trunk), each classified. List of dicts,
+    sorted by branch name for stable, diffable output."""
+    branches = list_branches(root, trunk=trunk)
+    rows = [
+        classify_branch(root, b["name"], trunk=trunk, live_threshold=live_threshold, orphan_age_days=orphan_age_days)
+        for b in branches
+    ]
+    return sorted(rows, key=lambda r: r["branch"])
+
+
+def check_base_fresh(root, trunk="main"):
+    """branch-gates charter item 3: is HEAD's merge-base with origin/<trunk> the SAME
+    commit as origin/<trunk>'s current tip? Reuses the exact merge-base mechanism
+    branch-gates SOW-2's Phase-1 recon hand-verified across four real repos — not a
+    new mechanism, the same `git merge-base` + `rev-list --count` mechanism above,
+    applied to HEAD specifically instead of iterating every branch.
+
+    Returns {"fresh": bool|None, "behind": int|None, "trunk_ref": str, "reason": str}.
+    `fresh is None` (with a stated reason) covers the fail-closed-on-refusal cases:
+    no origin/<trunk> ref reachable, or HEAD unreadable — a caller (the make target)
+    treats None the SAME as "not fresh" for exit-code purposes (a boot check that
+    can't prove freshness should not silently report as if it had), but the reason
+    string tells a human WHY, rather than a bare non-zero with no explanation.
+    """
+    root = str(root)
+    trunk_ref = f"origin/{trunk}"
+
+    def _run(*args):
+        r = subprocess.run(["git", "-C", root, *args], capture_output=True, text=True)
+        return r.returncode, r.stdout.strip(), r.stderr.strip()
+
+    rc, _, _ = _run("rev-parse", "--verify", "--quiet", trunk_ref)
+    if rc != 0:
+        return {
+            "fresh": None,
+            "behind": None,
+            "trunk_ref": trunk_ref,
+            "reason": f"no {trunk_ref} ref found — run `git fetch origin` first",
+        }
+    rc_head, _, _ = _run("rev-parse", "--verify", "--quiet", "HEAD")
+    if rc_head != 0:
+        return {
+            "fresh": None,
+            "behind": None,
+            "trunk_ref": trunk_ref,
+            "reason": "HEAD is unreadable (no commits yet?)",
+        }
+    rc_b, base, _ = _run("merge-base", "HEAD", trunk_ref)
+    if rc_b != 0 or not base:
+        return {
+            "fresh": None,
+            "behind": None,
+            "trunk_ref": trunk_ref,
+            "reason": "no merge-base between HEAD and trunk (unrelated history)",
+        }
+    rc_t, tip, _ = _run("rev-parse", trunk_ref)
+    if rc_t != 0:
+        return {
+            "fresh": None,
+            "behind": None,
+            "trunk_ref": trunk_ref,
+            "reason": f"could not resolve {trunk_ref} to a commit",
+        }
+    fresh = base == tip
+    rc_c, behind_out, _ = _run("rev-list", "--count", f"{base}..{trunk_ref}")
+    behind = int(behind_out) if rc_c == 0 and behind_out else None
+    reason = (
+        f"merge-base({base[:9]}) == {trunk_ref} tip ({tip[:9]})"
+        if fresh
+        else f"merge-base({base[:9]}) != {trunk_ref} tip ({tip[:9]}) — {behind if behind is not None else '?'} commit(s) behind"
+    )
+    return {"fresh": fresh, "behind": behind, "trunk_ref": trunk_ref, "reason": reason}
 
 
 def locate_stream(root, stream):

@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import os
 import pathlib
 import re
 import shutil
@@ -219,6 +220,61 @@ def _regen_local_boards(corpus_root: pathlib.Path) -> None:
         pass
 
 
+_TRUNK_BRANCH_ENV = "ZEO_TRUNK_BRANCH"
+
+
+def check_trunk_only(corpus_root: pathlib.Path | str, trunk: str | None = None) -> str | None:
+    """branch-gates charter item 2: refuse a commit in a CORPUS repo made on a
+    non-trunk branch. Returns a human-readable refusal reason, or None if the
+    commit may proceed (on trunk, or branch-state undeterminable — see below).
+
+    WHY: a SOW filed on a stray branch is invisible to every inbox — `board`,
+    `--inbox`, `orient`, `next` all resolve the corpus from the CHECKED-OUT
+    working tree (see `_discover_root`/`git_ref_state`'s own doctrine comment),
+    which in this org's actual workflow is expected to BE trunk. A stream that
+    commits its SOW on a feature branch and never merges it has produced a
+    filing nothing downstream can see — exactly RULING-324's "a branch filing
+    is invisible to every inbox" line (branch-gates charter's own words).
+
+    FAIL-OPEN ON UNDETERMINABLE, not fail-closed: a detached HEAD or a repo
+    with no branch concept (rare, e.g. a fresh repo before its first branch)
+    reports None (proceed) rather than guessing a refusal — this check only
+    fires on a POSITIVE, confirmed "you are on a non-trunk branch" read, same
+    fail-closed-on-the-refusal / fail-open-on-the-unknown shape `git_ref_state`
+    already uses for `contained_in_trunk`. (This is the ONE place in this
+    module that intentionally fails open on an unknown, because the ALTERNATIVE
+    failure mode — blocking every commit on a corpus with a detached HEAD or a
+    checkout tool this repo doesn't recognize — is worse than the gap it closes.)
+
+    Trunk name: `ZEO_TRUNK_BRANCH` env var if set (a repo may not use `main`),
+    else `main` — the name every real corpus in this org actually uses
+    (branch-gates SOW-2's own four-repo survey, RULING-324's own examples).
+    """
+    root = pathlib.Path(corpus_root).resolve()
+    trunk = trunk or os.environ.get(_TRUNK_BRANCH_ENV) or "main"
+    r = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "--abbrev-ref", "HEAD"],
+        capture_output=True,
+        text=True,
+    )
+    if r.returncode != 0:
+        return None  # can't read HEAD at all — fail open, not this check's call
+    branch = r.stdout.strip()
+    if not branch or branch == "HEAD":
+        return None  # detached HEAD — no branch to be "non-trunk" on; fail open
+    if branch == trunk:
+        return None
+    return (
+        f"COMMIT BLOCKED: this is a CORPUS repo and HEAD is on branch '{branch}', not "
+        f"trunk ('{trunk}').\n"
+        "  A SOW/ruling filed on a non-trunk branch is invisible to every inbox — "
+        "board, --inbox, orient, and next all read the checked-out corpus, which this "
+        "org's workflow expects to be trunk (RULING-324 / branch-gates charter).\n"
+        f"  Fix:    git checkout {trunk}   (then re-apply/re-stage your change there)\n"
+        "  Bypass: git commit --no-verify   (deliberate escape hatch)"
+    )
+
+
 def run_pre_commit(corpus_root: pathlib.Path | str | None = None) -> int:
     """Fail-closed pre-commit gate + unstage/regen local boards."""
     from . import cli
@@ -234,6 +290,11 @@ def run_pre_commit(corpus_root: pathlib.Path | str | None = None) -> int:
         )
         return 1
     root = pathlib.Path(root).resolve()
+
+    trunk_refusal = check_trunk_only(root)
+    if trunk_refusal is not None:
+        print(trunk_refusal, file=sys.stderr)
+        return 1
 
     unstaged = unstage_generated_boards(root)
     if unstaged:
