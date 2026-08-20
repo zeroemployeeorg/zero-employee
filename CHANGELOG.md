@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.4.2] - 2026-08-20
+
+### Fixed
+- **Bare `zeo --mint` no longer misreports as an unrecognized flag.** The argv
+  dispatcher's `--mint` branch required a trailing kind token to match at all
+  (`args[i] == "--mint" and i + 1 < len(args)`), so a bare, trailing `--mint`
+  fell through to the generic lint-mode fallback and printed `"path does not
+  exist: --mint"` — actively implying the flag itself was unknown rather than
+  that it needed an argument. `--mint` is now always recognized as the flag via
+  a dedicated `mint_requested` boolean independent of the kind argument's
+  presence; a missing or invalid kind now routes to `_mint`'s own actionable
+  `"unknown kind"` message instead of the misleading path error. (RULING-326)
+- **`binds:` now accepts a qualified `<project>/<stream-id>` form to
+  disambiguate a same-id stream collision across projects.** `RULING-208`
+  correctly refuses to auto-resolve two different projects declaring the same
+  stream id, but left no syntax for a human to actually cite the specific one
+  they meant — `check_binds` only ever produced an unresolvable
+  `binds-ambiguous` WARN. `binds:` now also accepts `<project>/<stream-id>`,
+  resolved against the stream index's own candidate paths; an unmatched
+  qualifier produces a `binds-qualified-project-mismatch` WARN naming the
+  projects that *do* have a candidate for that id. The existing bare-form
+  behavior is unchanged. (RULING-328)
+- **`zeo init --help` and `zeo equip --help` no longer silently run the real,
+  mutating command.** Both verbs accept zero required positional arguments (a
+  bare `zeo init`/`zeo equip` legitimately means "target the cwd"), so
+  `--help` alone left the computed positionals list empty — indistinguishable
+  from "no target given, use cwd" — and the scaffold/install ran for real
+  instead of printing usage. A shared `_wants_help()` check now runs before
+  either verb touches disk; `init --help`/`equip --help` now print usage and
+  leave the target directory untouched. (RULING-329)
+
 ## [0.4.1] - 2026-08-20
 
 ### Fixed
