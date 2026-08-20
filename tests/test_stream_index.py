@@ -87,6 +87,7 @@ IDX = {
     "arch-sep": {
         "path": "ducktyper/sow/arch-sep",
         "candidates": ["ducktyper/sow/arch-sep"],
+        "candidate_projects": {"ducktyper/sow/arch-sep": "ducktyper"},
         "ambiguous": False,
         "project": "ducktyper",
         "preschema": False,
@@ -94,6 +95,7 @@ IDX = {
     "dup": {
         "path": None,
         "candidates": ["a/sow/x1", "b/sow/x2"],
+        "candidate_projects": {"a/sow/x1": "a", "b/sow/x2": "b"},
         "ambiguous": True,
         "project": None,
         "preschema": False,
@@ -154,6 +156,116 @@ def test_a_malformed_pipe_value_is_flagged():
 
 def test_no_binds_field_is_silent():
     assert check_binds({}, IDX, PROJECTS) == []
+
+
+# ── RULING-328: qualified <project>/<stream-id> form ────────────────────
+# The real, measured shape: profrodai/org genuinely has two `build` streams,
+# projects/profrod-site/sow/build and projects/zeo/sow/build — not a synthetic
+# single-collision fixture.
+BUILD_IDX = {
+    "build": {
+        "path": None,
+        "candidates": ["profrod-site/sow/build", "zeo/sow/build"],
+        "candidate_projects": {
+            "profrod-site/sow/build": "profrod-site",
+            "zeo/sow/build": "zeo",
+        },
+        "ambiguous": True,
+        "project": None,
+        "preschema": False,
+    },
+}
+BUILD_PROJECTS = {"profrod-site", "zeo"}
+
+# The REAL shape, byte-for-byte: profrodai/org uses the containerized
+# `projects/<project>/sow/<stream>` layout, not the flat one above — this fixture
+# pins that specific shape after a live regression was found where the fix worked
+# against the flat-layout fixture above but silently mis-resolved every candidate on
+# a real corpus (parts[0] of "projects/profrod-site/sow/build" is "projects", not
+# "profrod-site" — a fixed-path-segment-index bug the flat fixture couldn't catch).
+BUILD_IDX_CONTAINERIZED = {
+    "build": {
+        "path": None,
+        "candidates": ["projects/profrod-site/sow/build", "projects/zeo/sow/build"],
+        "candidate_projects": {
+            "projects/profrod-site/sow/build": "profrod-site",
+            "projects/zeo/sow/build": "zeo",
+        },
+        "ambiguous": True,
+        "project": None,
+        "preschema": False,
+    },
+}
+
+
+def test_qualified_form_resolves_cleanly_against_the_real_build_build_collision():
+    out = check_binds({"binds": ["profrod-site/build"]}, BUILD_IDX, BUILD_PROJECTS)
+    assert out == []
+
+
+def test_qualified_form_resolves_the_other_candidate_too():
+    out = check_binds({"binds": ["zeo/build"]}, BUILD_IDX, BUILD_PROJECTS)
+    assert out == []
+
+
+def test_bare_form_on_the_same_collision_still_warns_ambiguous_unchanged():
+    out = check_binds({"binds": ["build"]}, BUILD_IDX, BUILD_PROJECTS)
+    assert len(out) == 1 and out[0].code == "binds-ambiguous"
+
+
+def test_qualified_form_wrong_project_gets_a_clearer_warn_naming_the_real_options():
+    out = check_binds({"binds": ["nonexistent-project/build"]}, BUILD_IDX, BUILD_PROJECTS)
+    assert len(out) == 1
+    assert out[0].code == "binds-qualified-project-mismatch"
+    assert "profrod-site" in out[0].message and "zeo" in out[0].message
+
+
+def test_qualified_form_on_an_id_absent_from_the_index_entirely_is_unresolved():
+    out = check_binds({"binds": ["some-project/nonexistent-stream"]}, BUILD_IDX, BUILD_PROJECTS)
+    assert len(out) == 1 and out[0].code == "binds-unresolved"
+
+
+def test_qualified_form_on_an_unambiguous_single_candidate_id_still_resolves():
+    # a '/' token against a stream id that ISN'T ambiguous — the qualifier still
+    # has to name the right project (arch-sep's only candidate is ducktyper).
+    out = check_binds({"binds": ["ducktyper/arch-sep"]}, IDX, PROJECTS)
+    assert out == []
+
+
+def test_qualified_form_resolves_against_the_containerized_layout_real_shape():
+    """Regression: the fix must resolve by the EXACT per-candidate project
+    build_stream_index computes (candidate_projects), never by guessing a fixed
+    path-segment index. Every real corpus checked uses the containerized
+    `projects/<project>/sow/<stream>` layout — a fix that only worked against a
+    flat-layout fixture would pass every unit test here and still silently
+    mis-resolve on any actual corpus. Both qualifiers must resolve cleanly."""
+    out1 = check_binds({"binds": ["profrod-site/build"]}, BUILD_IDX_CONTAINERIZED, BUILD_PROJECTS)
+    assert out1 == []
+    out2 = check_binds({"binds": ["zeo/build"]}, BUILD_IDX_CONTAINERIZED, BUILD_PROJECTS)
+    assert out2 == []
+
+
+def test_qualified_form_end_to_end_against_the_real_build_stream_index_function(tmp_path):
+    """Not a hand-built fixture at all: builds two real, on-disk `build` stream
+    directories under two different projects, runs the REAL build_stream_index()
+    against them, and confirms the qualified form resolves against its actual
+    output — the end-to-end path a hand-built dict fixture cannot fully cover."""
+    for project in ("profrod-site", "zeo"):
+        d = tmp_path / "projects" / project / "sow" / "build"
+        d.mkdir(parents=True)
+        (d / f"{project.upper()}-BUILD-SOW-1-x.md").write_text(
+            f"---\nsow: build\nn: 1\nproject: {project}\n---\nbody\n", encoding="utf-8"
+        )
+    idx = build_stream_index(tmp_path)
+    assert idx["build"]["ambiguous"] is True
+    out1 = check_binds({"binds": ["profrod-site/build"]}, idx, {"profrod-site", "zeo"})
+    assert out1 == []
+    out2 = check_binds({"binds": ["zeo/build"]}, idx, {"profrod-site", "zeo"})
+    assert out2 == []
+    # a project neither candidate belongs to still gets the actionable WARN
+    out3 = check_binds({"binds": ["nonexistent/build"]}, idx, {"profrod-site", "zeo"})
+    assert len(out3) == 1 and out3[0].code == "binds-qualified-project-mismatch"
+    assert "profrod-site" in out3[0].message and "zeo" in out3[0].message
 
 
 def test_check_binds_corpus_applies_to_any_genre_with_a_binds_field():

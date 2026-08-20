@@ -4403,9 +4403,24 @@ def build_stream_index(root):
     for sid, hits in by_id.items():
         dirs = sorted({str(h[0].relative_to(root)) for h in hits})
         projects = sorted({h[1] for h in hits})
+        # RULING-328: candidate_projects maps EACH candidate path to its own project,
+        # computed the same way `project` above is (r.parent.name off find_sow_roots'
+        # own sow-root dir) - never re-derived by guessing a fixed path-segment index
+        # later. find_sow_roots unions BOTH the flat (`<project>/sow/<stream>`) and
+        # containerized (`projects/<project>/sow/<stream>`) layouts and this corpus has
+        # both live at once (docstring above, "MIXED state during a restructure"), so
+        # the project's position in the relative path string is NOT fixed - parts[0] is
+        # right for flat, parts[1] is right for containerized, and hardcoding either one
+        # silently mis-resolves the other layout's candidates. This dict is the ONLY
+        # correct source for "which project does this specific candidate path belong
+        # to" - candidate_projects[path] is exact, never inferred from the string.
+        candidate_projects = {}
+        for d, proj, _pre in hits:
+            candidate_projects[str(d.relative_to(root))] = proj
         entries[sid] = {
             "path": dirs[0] if len(dirs) == 1 else None,
             "candidates": dirs,
+            "candidate_projects": candidate_projects,
             "ambiguous": len(dirs) > 1,
             "project": projects[0] if len(projects) == 1 else None,
             "preschema": all(h[2] for h in hits),
@@ -4467,6 +4482,15 @@ def check_binds(fm, entries, known_projects):
     Landed rulings are NOT rewritten (doctrine); every finding here is a WARN in the
     general lint (a recorded, countable residue) and is promoted to ERROR only at the
     commit path (doctrine's gate-the-future idiom, applied to this field).
+
+    RULING-328: a token containing '/' is a QUALIFIED `<project>/<stream-id>` reference,
+    resolved against the AMBIGUOUS entry's own `candidate_projects` dict (candidate path
+    -> its real project, computed by `build_stream_index` off `find_sow_roots`, never
+    re-derived from a fixed path-segment index here — this corpus mixes the flat
+    `<project>/sow/<stream>` and containerized `projects/<project>/sow/<stream>` layouts
+    at once, so the project's position in the path string is NOT fixed and guessing it
+    silently mis-resolves whichever layout wasn't guessed). This is purely additive: a
+    bare token (no '/') takes the unchanged pre-existing path below.
     """
     out = []
     binds = fm.get("binds")
@@ -4496,6 +4520,54 @@ def check_binds(fm, entries, known_projects):
                     "binds-malformed",
                     f"binds: entry '{tok}' contains a literal '|' — a YAML list item, not a "
                     "pipe-separated string (doctrine)",
+                )
+            )
+            continue
+        if "/" in tok:
+            want_project, _, sid = tok.partition("/")
+            want_project = want_project.strip()
+            sid = sid.strip()
+            e = entries.get(sid)
+            candidates = e["candidates"] if e is not None else []
+            cand_proj = e["candidate_projects"] if e is not None else {}
+            # cross-reference by the EXACT per-candidate project build_stream_index
+            # already computed (r.parent.name off find_sow_roots) — never by guessing
+            # a fixed path-segment index, which breaks on whichever of the flat/
+            # containerized layouts this corpus's mix wasn't guessed for.
+            matches = [c for c in candidates if cand_proj.get(c) == want_project]
+            if len(matches) == 1:
+                continue
+            if not matches:
+                available = sorted({cand_proj[c] for c in candidates if c in cand_proj})
+                if available:
+                    out.append(
+                        Finding(
+                            WARN,
+                            "binds-qualified-project-mismatch",
+                            f"binds: '{tok}' — no candidate for stream id '{sid}' belongs to "
+                            f"project '{want_project}'. Available: {', '.join(available)} "
+                            "(RULING-328)",
+                        )
+                    )
+                else:
+                    out.append(
+                        Finding(
+                            WARN,
+                            "binds-unresolved",
+                            f"binds: '{tok}' — stream id '{sid}' is absent from "
+                            "stream-index.md entirely (RULING-328 qualified form)",
+                        )
+                    )
+                continue
+            # matches > 1: the index itself has duplicate dir entries under the same
+            # project for this id — record, don't guess, same posture as plain ambiguity.
+            out.append(
+                Finding(
+                    WARN,
+                    "binds-ambiguous",
+                    f"binds: '{tok}' matches {len(matches)} directories under project "
+                    f"'{want_project}' ({', '.join(matches)}) — RECORDED, not resolved "
+                    "(doctrine)",
                 )
             )
             continue
