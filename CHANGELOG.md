@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.4.2] - 2026-08-20
+## [0.4.3] - 2026-08-20
 
 ### Fixed
 - **Bare `zeo --mint` no longer misreports as an unrecognized flag.** The argv
@@ -30,6 +30,27 @@
   instead of printing usage. A shared `_wants_help()` check now runs before
   either verb touches disk; `init --help`/`equip --help` now print usage and
   leave the target directory untouched. (RULING-329)
+- **`zeo --triage`/`--board` no longer shows a stale open question when a
+  later rev of the same SOW chain already carries a valid `resolved_by:`.**
+  `awaiting_ruling()` only ever read a `RULING-REQUESTED` row's own
+  frontmatter for `resolved_by:`, never a sibling rev's — so an earlier rev
+  that asked a question kept showing as open under NEEDS MASTER even after a
+  later rev of the identical chain (same `sow:` id, higher `n:`) recorded the
+  answer, since the answer is written on the rev that received the ruling,
+  not the rev that asked. Reproduced live against `zeroemployeeorg/org`:
+  `gsd-adoption` SOW-1 (answered by `RULING-321` via SOW-3),
+  `comic-slides-bubbles` SOW-10, and `covers` SOW-30 all sat in NEEDS MASTER
+  indefinitely despite each chain's later rev already carrying a verified
+  resolver. `awaiting_ruling()` now also walks every sibling in the same
+  chain with a strictly higher `n:` and adopts its `resolved_by:` if that
+  sibling's own resolver independently passes `check_resolved_by`'s
+  fail-closed `ok` gate — an unverifiable sibling resolver closes nothing,
+  same discipline already applied to a same-file `resolved_by` ghost. The
+  deliberate, pre-existing "a later SOW's mere existence does not alone close
+  a request" rule is unchanged; this adds a second, narrower check on top of
+  it. Two regression tests pin the new behavior and its fail-closed
+  counterpart. (root-caused via `RULING-331`'s own investigation; fixed in
+  `triage-resolved-by-chain-walk#1`)
 
 ## [0.4.1] - 2026-08-20
 
