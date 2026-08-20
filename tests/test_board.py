@@ -134,6 +134,70 @@ def test_revisions_of_one_sow_collapse_to_latest():
     assert len(out) == 1 and out[0]["updated"] == "2026-07-15"
 
 
+def test_a_later_revs_valid_resolved_by_closes_an_earlier_rev_in_the_same_chain(tmp_path):
+    # THE BUG (RULING-331's own finding, reproduced live 2026-08-20 in zeroemployeeorg/org):
+    # gsd-adoption SOW-1 (RULING-REQUESTED, no resolved_by of its own) sat in
+    # "NEEDS MASTER" forever even though gsd-adoption SOW-3 — same sow: id, later n:,
+    # already SHIPPED — carried a valid resolved_by: "ruling: RULING-321" answering the
+    # exact fork SOW-1 asked about. The open question WAS answered; the answer was just
+    # recorded on the rev that received the ruling, not the rev that asked for it.
+    # awaiting_ruling() only ever read a row's OWN frontmatter's resolved_by — it never
+    # walked forward to a sibling rev. This is distinct from the "later SOW exists"
+    # CLOSURE RULE (test_a_later_sow_does_NOT_close_a_ruling_request, above): that rule
+    # is about a later rev existing at all; this is about a later rev's resolved_by:
+    # having actually, verifiably passed check_resolved_by's ok gate.
+    ruling_dir = tmp_path / "ruling"
+    ruling_dir.mkdir()
+    (ruling_dir / "RULING-321-adapt-not-adopt.md").write_text("---\nruling: '321'\n---\nbody\n", encoding="utf-8")
+    ff = [
+        _f(
+            "p/sow/gsd-adoption/GSD-ADOPTION-SOW-1-recon.md",
+            sow="gsd-adoption",
+            n=1,
+            status="RULING-REQUESTED",
+            updated="2026-08-20",
+        ),
+        _f(
+            "p/sow/gsd-adoption/GSD-ADOPTION-SOW-3-built.md",
+            sow="gsd-adoption",
+            n=3,
+            status="SHIPPED",
+            resolved_by="ruling: RULING-321",
+            updated="2026-08-20",
+        ),
+    ]
+    out = awaiting_ruling(ff, root=tmp_path)
+    row1 = next(r for r in out if r["sownum"] == 1)
+    assert row1["resolved"] == ("ruling", "RULING-321")
+
+
+def test_a_later_revs_UNVERIFIABLE_resolved_by_does_NOT_close_an_earlier_rev(tmp_path):
+    # Fail-closed, mirroring check_resolved_by's own discipline for same-file checks:
+    # a later rev CLAIMING resolved_by: "ruling: RULING-999" where no such ruling exists
+    # on disk must NOT silently close the earlier rev's open question. An unverifiable
+    # resolver closes nothing — same standard as a same-file resolved_by ghost.
+    ff = [
+        _f(
+            "p/sow/gsd-adoption/GSD-ADOPTION-SOW-1-recon.md",
+            sow="gsd-adoption",
+            n=1,
+            status="RULING-REQUESTED",
+            updated="2026-08-20",
+        ),
+        _f(
+            "p/sow/gsd-adoption/GSD-ADOPTION-SOW-3-built.md",
+            sow="gsd-adoption",
+            n=3,
+            status="SHIPPED",
+            resolved_by="ruling: RULING-999",
+            updated="2026-08-20",
+        ),
+    ]
+    out = awaiting_ruling(ff, root=tmp_path)  # no ruling/ dir at all -> RULING-999 unresolvable
+    row1 = next(r for r in out if r["sownum"] == 1)
+    assert row1["resolved"] is None
+
+
 def test_answered_requires_an_EXACT_filename_match():
     # A false ANSWERED tells a stream to proceed on a ruling nobody made.
     ff = [

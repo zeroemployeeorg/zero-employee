@@ -5225,6 +5225,12 @@ def awaiting_ruling(files_fm, root=None):
     # the failure the board exists to end (DS5-SCRATCH-150).
     idx = rulings_index(files_fm)
     high = {}
+    # sibling_resolvers[sid]: every (n, (rkind, rtarget)) pair from ANY file in that
+    # chain (not just RULING-REQUESTED ones — the resolver lives on the LATER, usually
+    # SHIPPED, rev) whose own resolved_by: passed check_resolved_by with ok=True. Built
+    # once per file (not per RULING-REQUESTED row) so a resolver on a rev that never
+    # itself asked a question is still visible to an earlier rev that did.
+    sibling_resolvers = {}
     for path, fm in files_fm:
         if not isinstance(fm, dict):
             continue
@@ -5235,6 +5241,9 @@ def awaiting_ruling(files_fm, root=None):
         n = sow_identity(path, fm)
         if n is not None:
             high[sid] = max(high.get(sid, -1), n)
+        rkind, rtarget, rok, _ = check_resolved_by(fm, root) if root else (None, None, None, None)
+        if rok and n is not None:
+            sibling_resolvers.setdefault(sid, []).append((n, (rkind, rtarget)))
     out = []
     for path, fm in files_fm:
         if not isinstance(fm, dict):
@@ -5257,6 +5266,22 @@ def awaiting_ruling(files_fm, root=None):
             check_resolved_by(fm, _RESOLVE_ROOT[0]) if _RESOLVE_ROOT else (None, None, None, None)
         )
         resolved = (rkind, rtarget) if rok else None
+        # CHAIN-WALK CLOSURE (RULING-331's finding, distinct from the CLOSURE RULE
+        # above): a later rev filed in this SAME chain is not itself proof of closure
+        # (that's the rule just above — an unresolved SOW-67 does not silence SOW-63).
+        # But if that LATER rev carries its OWN valid resolved_by: (ok=True via the
+        # same fail-closed check_resolved_by gate, not mere presence of the field),
+        # the question this earlier rev asked WAS actually answered — just recorded on
+        # the rev that received the ruling rather than the rev that asked for it. Only
+        # a strictly HIGHER n in the SAME sid qualifies, and only a resolver that
+        # itself passed the gate — an earlier rev with no resolver of its own is
+        # otherwise untouched, so DOCS-SORT SOW-63/SOW-67 (SOW-67 has no resolved_by
+        # at all) still shows open exactly as before.
+        if resolved is None and n is not None:
+            for other_n, other_resolved in sibling_resolvers.get(sid, ()):
+                if other_n > n:
+                    resolved = other_resolved
+                    break
         out.append(
             {
                 "stream": sid,
