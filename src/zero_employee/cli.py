@@ -2753,6 +2753,7 @@ def main(argv: list[str] | None = None) -> int:
     priority_near_m = 3
     commit_check_corpus = False
     ruling_index = False
+    mint_requested = False
     mint_kind = None
     mint_stream = None
     mint_words = None
@@ -2800,13 +2801,28 @@ def main(argv: list[str] | None = None) -> int:
                 want_digest = True
                 digest_since = nxt
                 i += 2
-        elif args[i] == "--mint" and i + 1 < len(args):
-            mint_kind = args[i + 1]
-            j = i + 2
-            if mint_kind == "sow" and j < len(args) and not args[j].startswith("--"):
-                mint_stream = args[j]
-                j += 1
-            i = j
+        elif args[i] == "--mint":
+            # BUG (diag/mint-bare, RULING-326): the old `and i + 1 < len(args)` guard
+            # meant a bare trailing `--mint` (no kind after it) never matched this
+            # branch at all - the loop fell through to the lint-mode fallback below,
+            # which then reported "path does not exist: --mint", actively implying
+            # the flag itself was unrecognized rather than that it needed an argument.
+            # `--mint` is ALWAYS consumed here now, tracked by the separate
+            # `mint_requested` flag (mint_kind alone can't carry "requested but no
+            # kind given" - both None and "" are falsy and `if mint_kind:` below would
+            # skip dispatch either way, repeating the same fall-through bug with a
+            # different symptom). A missing kind now reaches `_mint`'s own actionable
+            # "unknown kind" message instead of the generic lint-mode path error.
+            mint_requested = True
+            if i + 1 < len(args):
+                mint_kind = args[i + 1]
+                j = i + 2
+                if mint_kind == "sow" and j < len(args) and not args[j].startswith("--"):
+                    mint_stream = args[j]
+                    j += 1
+                i = j
+            else:
+                i += 1
         elif args[i] == "--words" and i + 1 < len(args):
             mint_words = args[i + 1]
             i += 2
@@ -3543,7 +3559,7 @@ def main(argv: list[str] | None = None) -> int:
         or priority
         or commit_check_corpus
         or ruling_index
-        or mint_kind
+        or mint_requested
         or stream_index
         or want_digest
     ):
@@ -3588,8 +3604,8 @@ def main(argv: list[str] | None = None) -> int:
         return _commit_check_corpus(root)
     if ruling_index:
         return _ruling_index(root)
-    if mint_kind:
-        return _mint(root, mint_kind, mint_stream, words=mint_words)
+    if mint_requested:
+        return _mint(root, mint_kind or "<none>", mint_stream, words=mint_words)
     if stream_index:
         return _stream_index_cmd(root)
     if want_digest:

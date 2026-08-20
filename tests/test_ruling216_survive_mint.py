@@ -157,6 +157,42 @@ def test_mint_sow_missing_stream_name_fails_closed(repo, monkeypatch, capsys):
     assert "a stream name is required" in out
 
 
+def test_bare_mint_with_no_trailing_args_names_the_flag_not_a_bogus_path(repo, monkeypatch, capsys):
+    """RULING-326: `--mint` as the LAST token (no kind after it) used to fail the
+    `elif args[i] == "--mint" and i + 1 < len(args):` guard entirely - the loop fell
+    through to lint-mode's positional-target check, and since "--mint" is not a real
+    path, the user saw "zeo: path does not exist: --mint" - actively implying the FLAG
+    itself was unrecognized, not that it needed an argument. Measured live: a peer
+    session reading that message concluded --mint "isn't a real verb on this installed
+    zeo version" and fell back to a manual disk+refs scan, exactly the failure mode this
+    pins. `--mint` must always be recognized as the flag, and a missing kind must route
+    to _mint's own actionable "unknown kind" message, never the generic lint-mode path
+    error."""
+    monkeypatch.chdir(repo)
+    rc = cli.main(["--mint"])
+    cap = capsys.readouterr()
+    out = cap.out + cap.err
+    assert rc == 2
+    assert "path does not exist" not in out, (
+        "bare --mint must never fall through to the lint-mode path-not-found message"
+    )
+    assert "unknown kind" in out
+
+
+def test_mint_dot_as_kind_still_reports_unknown_kind_not_bare_mint_regression(repo, monkeypatch, capsys):
+    """A sibling shape to the bare-mint case above: `--mint .` (a stray path where a
+    kind belongs) must ALSO report an actionable unknown-kind message, not the
+    misleading path-not-found error - confirms the fix didn't just special-case a
+    trailing --mint while leaving a similar malformed invocation broken the same way."""
+    monkeypatch.chdir(repo)
+    rc = cli.main(["--mint", "."])
+    cap = capsys.readouterr()
+    out = cap.out + cap.err
+    assert rc == 2
+    assert "path does not exist" not in out
+    assert "unknown kind" in out
+
+
 # -- SURVIVE: build_ruling_index / render_ruling_index, owner + tombstone --
 
 
