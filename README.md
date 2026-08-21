@@ -36,9 +36,9 @@ docstring over the type it contradicts.
   instead of "whatever's loudest."
 - **A fleet state board**, regenerated locally on demand (`zeo --board`), never committed —
   the board is a view over the corpus, not a second source of truth to drift from the first.
-- **Zero-clutter scaffolding.** IDE and agent bridges (`--cursor`, `--gemini`, `--claude`,
-  `--agents`) are opt-in; a fresh `zeo init` doesn't litter a repo with tool config nobody
-  asked for.
+- **Zero-clutter scaffolding.** IDE and agent bridges (`--cursor`, `--codex`, `--gemini`,
+  `--claude`, `--agents`) are opt-in; a fresh `zeo init` doesn't litter a repo with tool
+  config nobody asked for.
 
 ```
               ┌─────────────────────────────────┐
@@ -251,11 +251,21 @@ zeo scaffold ducktyper render-pipeline --cursor
 # Add Gemini support:
 zeo scaffold ducktyper render-pipeline --gemini
 
+# Add OpenAI Codex support (AGENTS.md symlink to CLAUDE.md):
+zeo scaffold ducktyper render-pipeline --codex
+
 # Install the full agent & IDE bridge suite:
 zeo scaffold ducktyper render-pipeline --all
 ```
 
-Supported bridge flags: `--cursor`, `--gemini`, `--claude`, `--agents`, `--all`.
+`--codex` installs a single `AGENTS.md` symlink pointing at `CLAUDE.md` (a plain
+text fallback file if the filesystem can't symlink) — Codex CLI's real discovery
+convention is a flat `AGENTS.md` at the project root, walked from the Git root
+down to `cwd`, with no directory-of-rules convention the way Cursor's
+`.cursor/rules/` has. Same thin-bridge shape as the `GEMINI.md` bridge, not a
+content fork.
+
+Supported bridge flags: `--cursor`, `--codex`, `--gemini`, `--claude`, `--agents`, `--all`.
 
 ---
 

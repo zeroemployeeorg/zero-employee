@@ -1,5 +1,69 @@
 # Changelog
 
+## [0.5.0] - 2026-08-21
+
+### Added
+- **`--codex` bridge flag — OpenAI Codex support, mirroring `--cursor`/`--gemini`'s
+  shape.** Codex CLI's real discovery convention (per
+  `developers.openai.com/codex/guides/agents-md`, read 2026-08-21) is a flat
+  `AGENTS.md` at the project root, walked from the Git root down to `cwd` and
+  concatenated per directory level — no directory-of-rules convention the way
+  Cursor's `.cursor/rules/` is. This is a thin-bridge fit, so `--codex` installs
+  a single symlink (`AGENTS.md` → `CLAUDE.md`, via the same `_symlink_or_fallback`
+  helper the `GEMINI.md` bridge already uses — falls back to a one-line
+  `"See CLAUDE.md\n"` pointer file if the filesystem can't symlink), not a
+  content fork. Wired into `zeo bridges`/`init`/`scaffold`'s existing flag set
+  (`_TOOL_FLAGS`, `normalize_tools`, `parse_tool_flags`, `install_bridges`,
+  `--all`) and `cost.py`'s walk-skip dirs. Deliberately does not attempt
+  Codex's separate `.codex/agents/*.toml` subagent mechanism or its
+  permission/sandbox config — reserved for a future design filing if ever
+  needed. (`codex-multi-tool-adoption` SOW-02)
+
+### Fixed
+- **`check_resolved_by` now recognizes `SPARRING-RULING-<SLUG>-<DATE>`
+  citations.** The ruling-target regex required a leading digit after an
+  optional `RULING-` prefix, so a Sparring-authored ruling — named by
+  slug+date, not by number — never matched at all and reported `ok=False,
+  "no leading number"` even when the cited ruling genuinely existed on disk.
+  This starved `awaiting_ruling()`'s sibling-chain-walk of a valid resolver and
+  kept 8 of 10 measured chains pinned open in NEEDS MASTER indefinitely.
+  Fixed with a dedicated `SPARRING-RULING-*` branch ahead of the numeric
+  regex, globbing the same ruling homes for the literal stem (the whole
+  target IS the stem here, unlike the numeric branch where a bare number
+  prefixes a longer filename), with the same trailing-prose handling and the
+  same distinguishable-failure-detail discipline (unrecognized shape vs. real
+  shape not found on disk) as the existing numeric path. Verified against the
+  real org corpus: `zeo --triage .`'s NEEDS MASTER open-question count
+  dropped from 10 to 2. 17 new regression tests.
+  (`SPARRING-RULING-CITATION-TRACE` SOW-1 §4)
+- **`_resolved_by_cites` now checks each comma-separated `resolved_by`
+  segment independently.** A single `partition(":")` on the first colon left
+  `target` holding the entire remainder of a multi-ruling citation (e.g.
+  `"ruling: RULING-211, ruling: RULING-212"`), so `int(target)` raised on the
+  comma and the string-fallback compare could never match either ruling
+  number — both citations went unparseable, not just the second one. Fixed
+  by splitting `resolved_by` on `,` and checking each `kind: target` segment
+  independently, using the same leading-number extraction `check_resolved_by`
+  already uses for its own single-target case. Two new regression tests pin
+  both the first- and second-cited ruling in a comma-separated field.
+  (`session-handover-2026-08-21-governance` SOW-1 §6)
+- **Shipped `zeo-stream`/`zeo-sparring` scaffold agent templates resynced to
+  their canonical `org/roles/agents/*.md` source, fixing real drift.** The
+  templates under `scaffold_templates/agents/` (what `zeo equip`/`zeo
+  scaffold` actually install into a work repo's `.claude/agents/`) had
+  fallen out of sync with the canonical seat definitions: `zeo-stream.md`'s
+  template was missing the `run_in_background: true` guidance entirely
+  (RULING-308 — a stream starting a long-running Bash call with no doctrine
+  telling it the completion notification is already reliable falls back to
+  polling/waiting instead of working), and `zeo-sparring.md`'s template had
+  drifted further — `model: opus` instead of the now-canonical `model:
+  fable`, no `tools:`/`disallowedTools:` allowlist, and missing the
+  paragraph explaining that the allowlist is real mechanism, not prose.
+  `zeo-master.md`'s template was already at canonical parity and was left
+  untouched. Note: `.claude/agents/*.md` inside this repo's own checkout is
+  gitignored and was never the real shipped source — `scaffold_templates/`
+  is.
+
 ## [0.4.4] - 2026-08-20
 
 ### Fixed
