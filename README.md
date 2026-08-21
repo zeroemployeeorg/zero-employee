@@ -251,19 +251,29 @@ zeo scaffold ducktyper render-pipeline --cursor
 # Add Gemini support:
 zeo scaffold ducktyper render-pipeline --gemini
 
-# Add OpenAI Codex support (AGENTS.md symlink to CLAUDE.md):
+# Add OpenAI Codex support (AGENTS.md symlink + .codex/agents/*.toml personas):
 zeo scaffold ducktyper render-pipeline --codex
 
 # Install the full agent & IDE bridge suite:
 zeo scaffold ducktyper render-pipeline --all
 ```
 
-`--codex` installs a single `AGENTS.md` symlink pointing at `CLAUDE.md` (a plain
-text fallback file if the filesystem can't symlink) — Codex CLI's real discovery
-convention is a flat `AGENTS.md` at the project root, walked from the Git root
-down to `cwd`, with no directory-of-rules convention the way Cursor's
-`.cursor/rules/` has. Same thin-bridge shape as the `GEMINI.md` bridge, not a
-content fork.
+`--codex` installs two layers:
+
+- An `AGENTS.md` symlink pointing at `CLAUDE.md` (a plain text fallback file if the
+  filesystem can't symlink) — Codex CLI's real discovery convention is a flat
+  `AGENTS.md` at the project root, walked from the Git root down to `cwd`, with no
+  directory-of-rules convention the way Cursor's `.cursor/rules/` has. Same
+  thin-bridge shape as the `GEMINI.md` bridge, not a content fork.
+- `.codex/agents/{zeo-master,zeo-stream,zeo-sparring}.toml` — Codex-native
+  human-in-the-loop persona equivalents of the `.claude/agents/*.md` seats,
+  generalized from the real, behaviorally-verified `zeo-stream.toml` persona this
+  org shipped (RULING-351, RULING-353). **These personas load only under an
+  interactive Codex TUI session where a human explicitly invokes one by name** —
+  they do *not* load under `codex exec`/GitHub Action (non-interactive) dispatch,
+  which runs a plain prompt and never reads a persona file at all (RULING-351 §8
+  Amendment 2). Each shipped file carries this caveat in its own text. Never
+  clobbers an existing file of the same name, same as the `--agents` bridge.
 
 Supported bridge flags: `--cursor`, `--codex`, `--gemini`, `--claude`, `--agents`, `--all`.
 
@@ -340,6 +350,7 @@ make verify
 * [Tutorial](docs/tutorial.md) — A real, verified walkthrough: idea → grounded proposal → SOW → a design fork ruled and delivered → `--priority`. Start here if you want to see *why*, not just *what*.
 * [Getting Started Guide](docs/getting-started.md) — Step-by-step onboarding for new corpora.
 * [Release Process](docs/releasing.md) — Versioning, changelogs, and PyPI publishing.
+* [Swapping to Codex](docs/codex-swap.md) — How to move a session from Claude Code to OpenAI Codex and back, with verified commands, known gaps, and honest open items.
 * [Changelog](CHANGELOG.md) — What shipped, release by release.
 * [Contributing Guidelines](CONTRIBUTING.md) — Code style, test expectations, and PR rules.
 * [Security Policy](SECURITY.md) — How to report a vulnerability.

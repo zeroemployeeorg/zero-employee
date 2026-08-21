@@ -20,6 +20,15 @@ _MAX_IMPORT_DEPTH = 16
 _TOOL_FLAGS = frozenset({"cursor", "codex", "gemini", "claude", "agents", "all"})
 _PERSONAS = ("zeo-architect.md", "zeo-claimant.md", "zeo-verifier.md")
 _ZEO_AGENTS = ("zeo-master.md", "zeo-stream.md", "zeo-sparring.md")
+# CODEX-SWAP-UX-SOW-1: the `.toml`-shaped equivalent of _ZEO_AGENTS, for Codex's
+# `.codex/agents/*.toml` persona convention (RULING-351 approach C, human-in-the-loop
+# only -- see install_bridges()'s codex branch for the caveat this install carries).
+# Bare stems (no extension): the destination is `.codex/agents/{stem}.toml`, the
+# template is `codex-agents/{stem}.toml` -- kept in a dedicated template dir rather
+# than sharing `agents/` with the `.md` originals, since the TOML shape/destination
+# differ enough that a shared directory would blur `_read_template`'s lookup, not
+# clarify it.
+_ZEO_AGENTS_CODEX = ("zeo-master", "zeo-stream", "zeo-sparring")
 
 # REPO-EQUIP-SOW-5 (`zeo equip`) ALWAYS tier: (dest-relative-path, template-parts, executable?).
 # Matches SOW-1 s1's table exactly. Sourcing of the agent defs is documented in
@@ -267,6 +276,22 @@ def install_bridges(root: pathlib.Path | str, tools: Iterable[str] | None = None
         agents_md = root / "AGENTS.md"
         act = _symlink_or_fallback(agents_md, "CLAUDE.md", "See CLAUDE.md\n")
         actions.append({"path": "AGENTS.md", "action": act})
+
+        # CODEX-SWAP-UX-SOW-1 (RULING-351 approach C, S8 Amendment 2): the
+        # `.codex/agents/*.toml` human-in-the-loop persona layer, generalized from
+        # the one real, behaviorally-verified persona this org has ever shipped
+        # (org/.codex/agents/zeo-stream.toml, RULING-353). These personas load ONLY
+        # under an interactive Codex TUI session where a human explicitly invokes
+        # one by name -- NOT under `codex exec`/GitHub Action (approach B), which
+        # runs a plain prompt and never reads a persona file at all. Mirrors the
+        # `.claude/agents/{name}.md` install-triple pattern immediately below
+        # (`agents` tool), same never-clobber write, different destination/format.
+        codex_agents_dir = root / ".codex" / "agents"
+        codex_agents_dir.mkdir(parents=True, exist_ok=True)
+        for stem in _ZEO_AGENTS_CODEX:
+            dest = codex_agents_dir / f"{stem}.toml"
+            act = _write_if_absent(dest, _read_template("codex-agents", f"{stem}.toml"))
+            actions.append({"path": f".codex/agents/{stem}.toml", "action": act})
 
     if "gemini" in tools_set:
         gemini = root / "GEMINI.md"
