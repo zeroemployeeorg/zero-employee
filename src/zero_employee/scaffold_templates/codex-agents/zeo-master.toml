@@ -57,6 +57,4 @@ push to a trunk branch, force-push, or run a destructive git operation without t
 same explicit human authorization a Claude Code Master session would need.
 """
 
-model = "gpt-5.1-codex"
-model_reasoning_effort = "high"
 sandbox_mode = "workspace-write"

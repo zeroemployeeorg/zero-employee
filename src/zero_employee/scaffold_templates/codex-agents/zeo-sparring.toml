@@ -63,6 +63,4 @@ act. Keep your writes scoped to ruling/-shaped paths by discipline, the same fen
 BOOT-SPARRING's own prose keeps on the Claude Code side where the mechanism can't reach.
 """
 
-model = "gpt-5.1-codex"
-model_reasoning_effort = "high"
 sandbox_mode = "workspace-write"

@@ -103,8 +103,16 @@ read it directly to see what a working persona actually looks like,
 including its own in-file gap-disclosure history (see below). It carries the
 same FIRST ACT verb, escalation rule, and write-set discipline as
 `roles/agents/zeo-stream.md`, translated into Codex's TOML persona shape
-(`name`, `description`, `developer_instructions`, `model`,
-`model_reasoning_effort`, `sandbox_mode`).
+(`name`, `description`, `developer_instructions`, `sandbox_mode`). The
+`model`/`model_reasoning_effort` keys are deliberately omitted (see
+codex-multi-tool-adoption SOW-10): a shipped template has no reliable way to
+pre-validate a pinned model string against a given account's current
+entitlements (`codex --help`, `codex exec --help`, and `codex features list`
+were all checked; none enumerate valid model strings), so the persona
+inherits whatever model the parent session/account is actually configured to
+use, from `~/.codex/config.toml`, rather than pinning a string that can go
+stale and fail with a real API 400 `invalid_request_error` on accounts where
+the pinned model has been retired.
 
 ## Known gaps and their fixes
 
