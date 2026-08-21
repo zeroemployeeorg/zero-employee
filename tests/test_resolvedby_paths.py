@@ -75,6 +75,61 @@ def test_a_ruling_target_with_no_leading_number_FAILS_closed_with_a_distinct_rea
     assert ok is False and "no leading number" in detail
 
 
+def _mk_sparring(root, rel, stem):
+    p = root / rel / f"{stem}.md"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text("---\nruling: 'x'\n---\nbody\n", encoding="utf-8")
+    return p
+
+
+def test_a_SPARRING_RULING_slug_dated_target_resolves(tmp_path):
+    """SPARRING-RULING-CITATION-TRACE SOW-1 §4: SPARRING-RULING-<SLUG>-<DATE> has no
+    leading digit at all, so the numeric regex never matched it — a real, on-disk
+    Sparring ruling reported ok=False, "no leading number" for all such targets."""
+    stem = "SPARRING-RULING-CAST-ART-PIPELINE-2026-08-20"
+    _mk_sparring(tmp_path, "projects/ducktyper/ruling", stem)
+    kind, target, ok, detail = check_resolved_by({"resolved_by": f"ruling: {stem}"}, tmp_path)
+    assert (kind, ok) == ("ruling", True), detail
+    assert "no leading number" not in detail
+
+
+def test_a_SPARRING_RULING_target_at_ORG_scope_root_resolves(tmp_path):
+    stem = "SPARRING-RULING-Voice-Casting-Round"
+    _mk_sparring(tmp_path, "ruling", stem)
+    _, _, ok, _ = check_resolved_by({"resolved_by": f"ruling: {stem}"}, tmp_path)
+    assert ok is True
+
+
+def test_a_SPARRING_RULING_target_with_trailing_prose_still_resolves_and_says_so(tmp_path):
+    """profrod-logo-normalize's real citation on disk: 'SPARRING-RULING-PROFROD-LOGO-
+    2026-08-20 (including its own s8 amendment, landed same day)' — the stem is the
+    whole slug+date, so trailing prose must be split off the same way the numeric
+    branch already does, keeping the two failure/success details distinguishable."""
+    stem = "SPARRING-RULING-PROFROD-LOGO-2026-08-20"
+    _mk_sparring(tmp_path, "projects/ducktyper/ruling", stem)
+    _, _, ok, detail = check_resolved_by(
+        {"resolved_by": f"ruling: {stem} (including its own s8 amendment, landed same day)"},
+        tmp_path,
+    )
+    assert ok is True
+    assert "no such ruling" not in detail
+    assert "trailing text after the stem ignored" in detail
+
+
+def test_a_GENUINELY_absent_SPARRING_RULING_target_still_FAILS_closed(tmp_path):
+    _mk(tmp_path, "ruling/RULING-001-x.md")
+    _, _, ok, detail = check_resolved_by({"resolved_by": "ruling: SPARRING-RULING-DOES-NOT-EXIST-2026-01-01"}, tmp_path)
+    assert ok is False
+    assert "no such ruling on disk" in detail
+    assert "no leading number" not in detail  # distinguishable from the unrecognized-shape failure
+
+
+def test_numeric_ruling_targets_are_unaffected_by_the_SPARRING_branch(tmp_path):
+    _mk(tmp_path, "projects/ducktyper/ruling/RULING-046-sequencing.md")
+    kind, target, ok, _ = check_resolved_by({"resolved_by": "ruling: 046"}, tmp_path)
+    assert (kind, ok) == ("ruling", True)
+
+
 def test_no_resolved_by_returns_all_None(tmp_path):
     assert check_resolved_by({}, tmp_path) == (None, None, None, None)
 

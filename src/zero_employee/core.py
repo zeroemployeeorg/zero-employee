@@ -5053,16 +5053,39 @@ def check_resolved_by(fm, root, ruling_stems=None):
         # failure shapes distinguishable in `detail` rather than silently tolerating
         # decoration — an author writing "ruling: 272 see also 273" should be told their
         # target was ambiguous, not have it quietly resolved to the first number found.
-        m = re.match(r"^(?:RULING-)?(\d+)\s*(.*)$", target)
-        if m is None:
-            return ("ruling", target, False, "resolved_by ruling target has no leading number")
-        num, trailing = m.group(1), m.group(2).strip()
-        stem = "RULING-" + num
         homes = [
             root / "ruling",
             *root.glob("projects/*/ruling"),
             *root.glob("*/ruling"),
         ]
+        # SPARRING-RULING-<SLUG>-<DATE> citation shape (SPARRING-RULING-CITATION-TRACE
+        # SOW-1 §4): a Sparring-authored ruling, named by slug+date, not by a leading
+        # number — the numeric regex below never matches it at all (no RULING- prefix,
+        # no leading digit), so `m is None` and a REAL, on-disk ruling reported
+        # ok=False, "no leading number" for all 10 such rulings in this corpus, starving
+        # awaiting_ruling()'s sibling-chain-walk of a valid resolver to adopt. Unlike the
+        # numeric branch (a bare number prefixing a longer filename), the whole target
+        # here IS the stem — `<name>.md`, not `<name>-*.md` — so trailing prose after the
+        # stem is not part of this match; a trailing-prose citation on this shape falls
+        # through to the numeric branch's "no leading number" detail, which stays
+        # distinguishable from a genuine-shape-but-not-found miss below.
+        sm = re.match(r"^(SPARRING-RULING-.+?)(\s*\(.*\))?$", target, re.I)
+        if sm is not None:
+            stem = sm.group(1)
+            trailing = (sm.group(2) or "").strip()
+            hits = [f for h in homes if h.is_dir() for f in h.glob(stem + ".md")]
+            if not hits:
+                detail = "no such ruling on disk"
+            elif trailing:
+                detail = f"ruling file present (trailing text after the stem ignored: {trailing!r})"
+            else:
+                detail = "ruling file present"
+            return ("ruling", target, bool(hits), detail)
+        m = re.match(r"^(?:RULING-)?(\d+)\s*(.*)$", target)
+        if m is None:
+            return ("ruling", target, False, "resolved_by ruling target has no leading number")
+        num, trailing = m.group(1), m.group(2).strip()
+        stem = "RULING-" + num
         hits = [f for h in homes if h.is_dir() for f in h.glob(stem + "-*.md")]
         if not hits:
             detail = "no such ruling on disk"
