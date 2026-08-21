@@ -2167,19 +2167,36 @@ def build_stem_index(root):
 
 
 def _resolved_by_cites(fm, ruling_nnn):
+    """MEASURED (session-handover-2026-08-21-governance §6): a comma-separated
+    multi-ruling citation - `resolved_by: "ruling: RULING-211, ruling: RULING-212"` -
+    used to return False for BOTH rulings, not just the second. Root cause: a single
+    partition(":") on the FIRST colon left `target` holding the entire remainder
+    ("RULING-211, ruling: RULING-212"), so int(target) raised on the comma and the
+    string-fallback compare could never match either number - the whole field went
+    unparseable the moment a second citation appeared. Fix: split on "," first (the
+    doctrine-sanctioned way to stack multiple resolved_by receipts in one field) and
+    check each `kind: target` segment independently, same leading-number extraction
+    `check_resolved_by` already uses for its own single-target case."""
     rb = str(fm.get("resolved_by", "") or "").strip()
-    if not rb or ":" not in rb:
+    if not rb:
         return False
-    kind, _, target = rb.partition(":")
-    if kind.strip().lower() != "ruling":
-        return False
-    t = target.strip()
-    if t.upper().startswith("RULING-"):
-        t = t[len("RULING-") :]
-    try:
-        return int(t) == int(ruling_nnn)
-    except ValueError:
-        return t.lstrip("0") == str(ruling_nnn).lstrip("0")
+    for segment in rb.split(","):
+        segment = segment.strip()
+        if not segment or ":" not in segment:
+            continue
+        kind, _, target = segment.partition(":")
+        if kind.strip().lower() != "ruling":
+            continue
+        t = target.strip()
+        if t.upper().startswith("RULING-"):
+            t = t[len("RULING-") :]
+        try:
+            if int(t) == int(ruling_nnn):
+                return True
+        except ValueError:
+            if t.lstrip("0") == str(ruling_nnn).lstrip("0"):
+                return True
+    return False
 
 
 def _chain_cites(sow_index, sow_id, start_n, ruling_nnn):

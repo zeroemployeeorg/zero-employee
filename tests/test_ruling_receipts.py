@@ -214,6 +214,44 @@ def test_RULING_320_a_citation_on_an_EARLIER_rev_than_the_named_one_does_not_cou
         assert out[list(out)[0]][0].code == "resolved-by-missing-citation"
 
 
+def test_comma_separated_multi_ruling_citation_satisfies_the_FIRST_ruling_named():
+    """session-handover-2026-08-21-governance SOW-1 s6: `_resolved_by_cites` used to
+    return False for BOTH rulings in a comma-separated multi-citation field like
+    'ruling: RULING-211, ruling: RULING-212' - partition(":") on the first colon left
+    `target` holding the whole unparseable remainder. Pin the first-cited ruling here,
+    the second in the sibling test below."""
+    with tempfile.TemporaryDirectory() as t:
+        root = _corpus(pathlib.Path(t))
+        _sow(
+            root / "p" / "sow" / "s",
+            "f.md",
+            "s",
+            1,
+            resolved_by="ruling: RULING-211, ruling: RULING-212",
+        )
+        _ruling(root / "ruling", "211", "s#1")
+        out = check_ruling_receipts(_all_fm(root), root)
+        assert out == {}
+
+
+def test_comma_separated_multi_ruling_citation_satisfies_the_SECOND_ruling_named():
+    """Same fixture, second cited ruling - this is the one that was already reachable
+    by a naive fix that only re-parsed the tail; both must work, since the bug in fact
+    broke BOTH rulings, not just the second."""
+    with tempfile.TemporaryDirectory() as t:
+        root = _corpus(pathlib.Path(t))
+        _sow(
+            root / "p" / "sow" / "s",
+            "f.md",
+            "s",
+            1,
+            resolved_by="ruling: RULING-211, ruling: RULING-212",
+        )
+        _ruling(root / "ruling", "212", "s#1")
+        out = check_ruling_receipts(_all_fm(root), root)
+        assert out == {}
+
+
 def test_build_sow_n_index_keeps_the_latest_rev_by_updated():
     with tempfile.TemporaryDirectory() as t:
         root = _corpus(pathlib.Path(t))
