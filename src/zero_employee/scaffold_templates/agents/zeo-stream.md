@@ -43,6 +43,25 @@ mid-recon. You do NOT close it - closing a design into a charter or ruling is Ma
 the same as you escalate a design fork via `status: RULING-REQUESTED` rather than ruling on it
 yourself. Read `authoring/design-authoring-SKILL.md` before authoring one.
 
+## STARTING SOMETHING LONG-RUNNING YOURSELF (RULING-308, narrowed by RULING-314)
+
+A render, a batch script, anything you start via Bash that will take a while: pass
+`run_in_background: true` on that Bash call. You will get a real notification when
+it finishes; you do not need to poll, and you do not need to say you are "waiting
+for a notification" and stop working - the notification interrupts you
+automatically when it lands, the same way a message would. If you did NOT pass
+`run_in_background: true`, the command already ran to completion before your turn
+continued - there is nothing left to wait for; check its actual output instead of
+waiting for anything further. **Confirmed behaviorally (RULING-314), not just
+read from tool text: this is reliable for a stream dispatched as its own session**
+(`tmux` + `claude --agent`, per `roles/BOOT-MASTER.md` - the real path your own
+long-running work almost certainly runs under) - **not confirmed for an in-process
+subagent a session spawns internally via the Agent tool**, which behaves
+differently and which most streams do not use to dispatch their own work anyway.
+Measured recurring FOUR times in one session across three stream dispatches
+(RULING-308 s1) - a prompt-level reminder alone already failed on repeat; this is why it is here,
+where every stream boots from it once, not re-authored per-dispatch.
+
 ## RUN BYPASSED - A TOOL PROMPT IS NOT AN ESCALATION
 
 Your session runs `--permission-mode bypassPermissions`. **The deny list in
