@@ -20,3 +20,9 @@ uv.lock.bak
 *.pem
 .agents/
 .claude/
+
+# Master session scratch (RULING-339) — transient working notes / DRAFT content
+# not yet ready for a durable filing, preventively ignored though the directory
+# does not exist here yet. Anything cited by another artifact must land the
+# same session, per RULING-339 §4 — never left here to be lost.
+.master-scratch/
