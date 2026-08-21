@@ -17,7 +17,7 @@ from importlib import resources
 
 _IMPORT_RE = re.compile(r"""^\s*@import\s+["']([^"']+)["']\s*$""")
 _MAX_IMPORT_DEPTH = 16
-_TOOL_FLAGS = frozenset({"cursor", "gemini", "claude", "agents", "all"})
+_TOOL_FLAGS = frozenset({"cursor", "codex", "gemini", "claude", "agents", "all"})
 _PERSONAS = ("zeo-architect.md", "zeo-claimant.md", "zeo-verifier.md")
 _ZEO_AGENTS = ("zeo-master.md", "zeo-stream.md", "zeo-sparring.md")
 
@@ -150,7 +150,7 @@ def normalize_tools(tools: Iterable[str] | None) -> set[str]:
     """Expand --all; drop unknowns; return concrete tool set."""
     raw = {str(t).strip().lower() for t in (tools or []) if str(t).strip()}
     if "all" in raw:
-        return {"cursor", "gemini", "claude", "agents"}
+        return {"cursor", "codex", "gemini", "claude", "agents"}
     return {t for t in raw if t in _TOOL_FLAGS and t != "all"}
 
 
@@ -159,6 +159,8 @@ def parse_tool_flags(argv: list[str]) -> set[str]:
     selected: set[str] = set()
     if "--cursor" in argv:
         selected.add("cursor")
+    if "--codex" in argv:
+        selected.add("codex")
     if "--gemini" in argv:
         selected.add("gemini")
     if "--claude" in argv:
@@ -166,7 +168,7 @@ def parse_tool_flags(argv: list[str]) -> set[str]:
     if "--agents" in argv:
         selected.add("agents")
     if "--all" in argv:
-        selected = {"cursor", "gemini", "claude", "agents"}
+        selected = {"cursor", "codex", "gemini", "claude", "agents"}
     return selected
 
 
@@ -254,6 +256,17 @@ def install_bridges(root: pathlib.Path | str, tools: Iterable[str] | None = None
         cursorrules = root / ".cursorrules"
         act = _symlink_or_fallback(cursorrules, "CLAUDE.md", "See CLAUDE.md\n")
         actions.append({"path": ".cursorrules", "action": act})
+
+    if "codex" in tools_set:
+        # Codex CLI discovery (developers.openai.com/codex/guides/agents-md, read
+        # 2026-08-21): a flat AGENTS.md at the project root (Codex walks the Git
+        # root down to cwd, concatenating AGENTS.md/AGENTS.override.md per
+        # directory level) -- no frontmatter, no directory-of-rules convention
+        # the way Cursor's `.cursor/rules/` is. Same shape as the GEMINI.md
+        # bridge: a single symlink deferring to CLAUDE.md, not a content fork.
+        agents_md = root / "AGENTS.md"
+        act = _symlink_or_fallback(agents_md, "CLAUDE.md", "See CLAUDE.md\n")
+        actions.append({"path": "AGENTS.md", "action": act})
 
     if "gemini" in tools_set:
         gemini = root / "GEMINI.md"

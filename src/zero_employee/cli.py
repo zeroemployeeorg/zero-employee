@@ -1026,10 +1026,10 @@ USAGE
   zeo hooks session-start    SessionStart orientation + local board refresh.
   zeo hooks stop             Stop hook: session-cost log + uncommitted advisory.
   zeo hooks pretooluse-git   PreToolUse advisory before git commit/push.
-  zeo init [path] [--cursor|--gemini|--claude|--agents|--all]
+  zeo init [path] [--cursor|--codex|--gemini|--claude|--agents|--all]
                                   Scaffold a corpus: claude-md/CLAUDE.md marker + root
                                   CLAUDE.md (@import). Tool bridges are opt-in.
-  zeo scaffold <project> <stream> [n] [title] [--cursor|--gemini|--claude|--agents|--all]
+  zeo scaffold <project> <stream> [n] [title] [--cursor|--codex|--gemini|--claude|--agents|--all]
                                   Create projects/<project>/CLAUDE.md + Rev-17 SOW under
                                   sow/<stream>/ (wrapper around `zeo sow new`). Bridges opt-in.
   zeo sow new <project> <stream> --title "..." [options]
@@ -1047,7 +1047,7 @@ USAGE
                                   `zeo intake "title"` creates OPEN intake without YAML.
   zeo doctor PATH | zeo doctor --changed
                                   Actionable readiness check for one SOW (or git-changed files).
-  zeo bridges [path] --cursor|--gemini|--claude|--agents|--all
+  zeo bridges [path] --cursor|--codex|--gemini|--claude|--agents|--all
                                   Install/refresh selected IDE/agent bridges only.
                                   Distinct from --resync-* (doctrine SHA sync).
   zeo equip <repo> [--force|--diff]
@@ -1139,11 +1139,11 @@ OPTIONS
                      Install thin hook stubs + .git/hooks/pre-commit; gitignore boards.
   hooks pre-commit|session-start|stop|pretooluse-git
                      Hook runners (logic lives in the package; stubs just exec these).
-  init [path] [--cursor|--gemini|--claude|--agents|--all]
+  init [path] [--cursor|--codex|--gemini|--claude|--agents|--all]
                      Scaffold corpus marker + CLAUDE.md entrypoint; bridges opt-in.
-  scaffold <project> <stream> [n] [title] [--cursor|--gemini|--claude|--agents|--all]
+  scaffold <project> <stream> [n] [title] [--cursor|--codex|--gemini|--claude|--agents|--all]
                      Scaffold a project workstream SOW (Rev 17); bridges opt-in.
-  bridges [path] --cursor|--gemini|--claude|--agents|--all
+  bridges [path] --cursor|--codex|--gemini|--claude|--agents|--all
                      Install selected IDE/agent bridges (not doctrine --resync-*).
   equip <repo> [--force|--diff]
                      Install .claude/ + CLAUDE.md ALWAYS-tier files. Never clobbers by default.
@@ -1197,7 +1197,7 @@ def _wants_help(argv: list[str]) -> bool:
 def _cmd_init(argv: list[str]) -> int:
     if _wants_help(argv):
         print(
-            "Usage: zeo init [path] [--cursor] [--gemini] [--claude] [--agents] [--all]\n"
+            "Usage: zeo init [path] [--cursor] [--codex] [--gemini] [--claude] [--agents] [--all]\n"
             "  Scaffold a corpus: claude-md/CLAUDE.md marker + root CLAUDE.md.\n"
             "  path defaults to the current directory. Read-only with -h/--help.",
             file=sys.stderr,
@@ -1218,7 +1218,7 @@ def _cmd_init(argv: list[str]) -> int:
         for act in b.get("actions", []):
             print(f"    {act['action']}: {act['path']}")
     else:
-        print("  bridges: (none — pass --cursor/--gemini/--claude/--agents/--all)")
+        print("  bridges: (none — pass --cursor/--codex/--gemini/--claude/--agents/--all)")
     print("")
     print("Next:")
     print("")
@@ -1630,7 +1630,7 @@ def _cmd_scaffold(argv: list[str]) -> int:
     positionals = [a for a in argv if not str(a).startswith("-")]
     if len(positionals) < 2:
         print(
-            "Usage: zeo scaffold <project> <stream> [n] [title] [--cursor] [--gemini] [--claude] [--agents] [--all]",
+            "Usage: zeo scaffold <project> <stream> [n] [title] [--cursor] [--codex] [--gemini] [--claude] [--agents] [--all]",
             file=sys.stderr,
         )
         return 2
@@ -1666,7 +1666,7 @@ def _cmd_bridges(argv: list[str]) -> int:
     tools = parse_tool_flags(argv)
     if not tools:
         print(
-            "Usage: zeo bridges [path] --cursor|--gemini|--claude|--agents|--all",
+            "Usage: zeo bridges [path] --cursor|--codex|--gemini|--claude|--agents|--all",
             file=sys.stderr,
         )
         return 2

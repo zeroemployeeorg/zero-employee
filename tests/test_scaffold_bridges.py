@@ -6,7 +6,7 @@ from zero_employee.scaffold import init_corpus, install_bridges, normalize_tools
 
 
 def test_normalize_tools_all():
-    assert normalize_tools(["all"]) == {"cursor", "gemini", "claude", "agents"}
+    assert normalize_tools(["all"]) == {"cursor", "codex", "gemini", "claude", "agents"}
     assert normalize_tools(["cursor", "gemini"]) == {"cursor", "gemini"}
     assert normalize_tools(None) == set()
     assert normalize_tools(["nope"]) == set()
@@ -42,6 +42,22 @@ def test_bridges_gemini_claude_agents(tmp_path):
     assert (root / ".claude" / "hooks" / "check-trunk-guard.sh").is_file()
     assert (root / ".agents" / "zeo-verifier.md").is_file()
     assert not (root / ".cursor").exists()
+    assert not (root / "AGENTS.md").exists()
+
+
+def test_bridges_codex_only(tmp_path):
+    """AGENTS.md bridge (developers.openai.com/codex/guides/agents-md, read 2026-08-21):
+    a flat symlink to CLAUDE.md at repo root, same shape as the GEMINI.md bridge --
+    Codex has no directory-of-rules convention analogous to `.cursor/rules/`."""
+    root = tmp_path / "r"
+    root.mkdir()
+    (root / "CLAUDE.md").write_text("# x\n", encoding="utf-8")
+    info = install_bridges(root, tools=["codex"])
+    agents_md = root / "AGENTS.md"
+    assert agents_md.is_symlink()
+    assert agents_md.resolve() == (root / "CLAUDE.md").resolve()
+    assert not (root / ".codex").exists()
+    assert "codex" in info["tools"]
 
 
 def test_bridges_claude_settings_is_not_the_empty_stub(tmp_path):

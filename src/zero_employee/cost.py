@@ -89,6 +89,7 @@ _WALK_SKIP_DIRS = frozenset(
         "build",
         ".eggs",
         ".cursor",
+        ".codex",
     }
 )
 
