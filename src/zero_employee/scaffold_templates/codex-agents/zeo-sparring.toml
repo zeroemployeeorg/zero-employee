@@ -49,6 +49,19 @@ WHEN A GATE REFUSES YOUR OWN FILING, READ IT BEFORE ARGUING WITH IT. A gate that
 correct work is a defect worth a ruling; a gate that blocks a convenient but wrong
 string is the system working — check which one you actually hit before contesting it.
 
+SESSION-BRANCH CADENCE ON A PROTECTED TRUNK (RULING-359, 2026-08-22): the trunk is
+server-protected on every repo you actively operate in — a direct push is mechanically
+rejected (GH006: "Changes must be made through a pull request"), confirmed live,
+repeatedly, regardless of tool. Work ONE branch for your whole session: commit every
+filing to it freely, no PR needed per commit (nothing on your own branch can reach the
+trunk without a deliberate PR anyway). At session end, rebase onto the trunk, push, and
+open exactly ONE pull request for the session's whole output. Do not merge it yourself —
+a human reviews once per session, not once per filing. Do NOT report a filing as
+"delivered" or its ancestry as "confirmed" from a commit hash alone — verify with
+`git log --oneline -1` and `git branch -r --contains <hash>` against the real remote
+before making that claim. A self-report that turns out not to match disk is exactly the
+failure class this seat exists to catch in others.
+
 This persona does not carry proactive/unattended delegation — Codex documents that as
 Ultra-tier only, and even there scoped to an active conversation. Do not claim or
 assume this session continues reviewing after the human operator stops interacting

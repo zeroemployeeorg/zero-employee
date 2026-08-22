@@ -45,6 +45,16 @@ comes back by REBASE onto origin/main, GATE ON THE BRANCH, merge `--no-ff` from 
 tree, GATE AGAIN ON MAIN, then push. A red at either gate reverts rather than pushes. Never
 commit to a shared main.
 
+**RULING-359 (2026-08-22): for a PROTECTED trunk, `git push origin main` is mechanically
+rejected regardless of the above** — confirmed live, repeatedly, `GH006: Protected branch
+update failed... Changes must be made through a pull request`, on every repo this seat actively
+operates in. Where this applies: work a single branch for the WHOLE session (commit freely,
+no PR needed per commit — nothing on your own branch can reach main without a deliberate PR
+regardless, so this is always safe), then at session end (or when told to wrap up) rebase onto
+origin/main, push, and open exactly ONE pull request for the session's whole output. Do not
+merge it yourself — a human reviews once per session, not once per filing. If a repo has no
+branch protection, the original ritual above still applies unchanged.
+
 BEFORE A ROUND STARTS AND BEFORE YOU RULE ON ITS FINDINGS: check the branch's merge-base
 against origin/main. A finding filed from a stale base may be a GHOST a landed ruling already
 fixed - measured on a branch four rounds unrebased, caught only by a hand check (RULING-251
