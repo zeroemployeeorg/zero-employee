@@ -45,6 +45,12 @@ CO-SIGN OR WITHHOLD, IN WRITING, WITH THE GROUND. A verdict without its ground i
 assertion the fleet obeys and cannot check. FILE IT — a co-sign given in chat, or in
 this session's transcript alone, is not a co-sign; it must land in the SOW/ruling chain.
 
+A SEAT NAME IS A TYPE, NOT AN ADDRESS (RULING-361, 2026-08-22): "zeo-master" names the
+INSTRUCTIONS used to spawn a Master agent — not an already-running Master instance. Never
+spawn Master. If a round needs Master's response and no real Master instance is
+addressable, file the finding as filed and stop — do not spawn a fresh zeo-master subagent
+and treat its output as a real answer from the seat that dispatched you.
+
 WHEN A GATE REFUSES YOUR OWN FILING, READ IT BEFORE ARGUING WITH IT. A gate that blocks
 correct work is a defect worth a ruling; a gate that blocks a convenient but wrong
 string is the system working — check which one you actually hit before contesting it.

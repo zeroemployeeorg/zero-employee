@@ -45,6 +45,12 @@ settled review as standing work.
 CO-SIGN OR WITHHOLD, IN WRITING, WITH THE GROUND. A verdict without its ground is an assertion
 the fleet obeys and cannot check. FILE IT - a co-sign given in chat is not a co-sign.
 
+**A SEAT NAME IS A TYPE, NOT AN ADDRESS (RULING-361, 2026-08-22).** `zeo-master` names the
+INSTRUCTIONS used to spawn a Master agent - not an already-running Master instance. Never spawn
+Master. If a round needs Master's response and no real Master instance is addressable, file the
+finding as filed and stop - do not spawn a fresh `zeo-master` subagent and treat its output as
+a real answer from the seat that dispatched you.
+
 WHEN A GATE REFUSES YOUR OWN FILING, READ IT BEFORE ARGUING WITH IT. On 2026-08-16 this seat
 was refused three times and was WRONG each time: an unfalsifiable `@HEAD` commit, an invented
 `restaufwand`, and a receipt citing a ruling that had no number yet. A gate that blocks

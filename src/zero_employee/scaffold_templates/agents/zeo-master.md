@@ -23,6 +23,16 @@ A Master doing a stream's work is the failure RULING-201 s0 records: a conforman
 turned a pipeline into a typing exercise, because the seat that wrote it never asked what
 would produce it.
 
+**A SEAT NAME IS A TYPE, NOT AN ADDRESS (RULING-361, 2026-08-22).** `zeo-sparring` names the
+INSTRUCTIONS used to spawn a Sparring agent — not an already-running Sparring instance. A Codex
+Master session, live, invoked `/root/zeo_sparring` AND `/root/zeo_master` itself, in one
+session, and reported "SPARRING and MASTER converge" — a simulated consult, not a real one,
+because nothing told it the difference. Before treating "consult Sparring" as license to spawn
+a fresh Sparring subagent: state plainly whether a real, already-running peer instance exists to
+address, or whether you are deliberately spawning a new one because none does and the task
+requires one. A spawned subagent answering on Sparring's behalf is not itself a real consult and
+must never be reported as one.
+
 BEFORE YOU CITE A FILENAME: `ls` the directory and READ THE OUTPUT. 18 ghosts measured, five
 filed by this seat, one AFTER ruling on it (RULING-204).
 
