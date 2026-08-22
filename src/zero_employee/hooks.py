@@ -224,17 +224,32 @@ _TRUNK_BRANCH_ENV = "ZEO_TRUNK_BRANCH"
 
 
 def check_trunk_only(corpus_root: pathlib.Path | str, trunk: str | None = None) -> str | None:
-    """branch-gates charter item 2: refuse a commit in a CORPUS repo made on a
-    non-trunk branch. Returns a human-readable refusal reason, or None if the
-    commit may proceed (on trunk, or branch-state undeterminable — see below).
+    """branch-gates charter item 2: WARN (not refuse, per RULING-360) on a commit
+    in a CORPUS repo made on a non-trunk branch. Returns a human-readable warning
+    string for the caller to print, or None if there is nothing to warn about (on
+    trunk, or branch-state undeterminable — see below). The caller no longer
+    treats a non-None return as a reason to block the commit — see RULING-360 and
+    run_pre_commit's own call site comment.
 
-    WHY: a SOW filed on a stray branch is invisible to every inbox — `board`,
-    `--inbox`, `orient`, `next` all resolve the corpus from the CHECKED-OUT
-    working tree (see `_discover_root`/`git_ref_state`'s own doctrine comment),
-    which in this org's actual workflow is expected to BE trunk. A stream that
-    commits its SOW on a feature branch and never merges it has produced a
-    filing nothing downstream can see — exactly RULING-324's "a branch filing
-    is invisible to every inbox" line (branch-gates charter's own words).
+    WHY THE UNDERLYING CONCERN IS STILL REAL: a SOW filed on a stray branch is
+    invisible to every inbox — `board`, `--inbox`, `orient`, `next` all resolve
+    the corpus from the CHECKED-OUT working tree (see `_discover_root`/
+    `git_ref_state`'s own doctrine comment), which in this org's actual workflow
+    is expected to BE trunk. A stream that commits its SOW on a feature branch
+    and never merges it has produced a filing nothing downstream can see —
+    `branch-gates` charter item 2's own words, not RULING-324 (RULING-324 is the
+    ratified five-state branch taxonomy; its own §4 reception section names this
+    hook as unblocked-and-proceed, but the rationale text itself is the charter
+    item's, and RULING-360 corrects this docstring's prior bare-RULING-324
+    citation to name that properly).
+
+    WHY IT NO LONGER BLOCKS: RULING-359 (2026-08-22) made a session branch the
+    MANDATORY working shape for Master/Sparring on every actively-protected
+    corpus repo — commit repeatedly to one branch all session, one PR at the
+    end. A fail-closed block here refused every one of those mandated commits,
+    which left `--no-verify` (skipping every check in run_pre_commit, not just
+    this one) as the only way to follow the cadence at all. RULING-360 ruled the
+    cadence stands and this gate yields to a warning instead.
 
     FAIL-OPEN ON UNDETERMINABLE, not fail-closed: a detached HEAD or a repo
     with no branch concept (rare, e.g. a fresh repo before its first branch)
@@ -265,13 +280,15 @@ def check_trunk_only(corpus_root: pathlib.Path | str, trunk: str | None = None) 
     if branch == trunk:
         return None
     return (
-        f"COMMIT BLOCKED: this is a CORPUS repo and HEAD is on branch '{branch}', not "
-        f"trunk ('{trunk}').\n"
-        "  A SOW/ruling filed on a non-trunk branch is invisible to every inbox — "
-        "board, --inbox, orient, and next all read the checked-out corpus, which this "
-        "org's workflow expects to be trunk (RULING-324 / branch-gates charter).\n"
-        f"  Fix:    git checkout {trunk}   (then re-apply/re-stage your change there)\n"
-        "  Bypass: git commit --no-verify   (deliberate escape hatch)"
+        f"zeo: this is a CORPUS repo and HEAD is on branch '{branch}', not trunk "
+        f"('{trunk}') — this is a WARNING, not a block (RULING-360).\n"
+        "  A SOW/ruling filed here and never merged back to trunk is invisible to "
+        "every inbox — board, --inbox, orient, and next all read the checked-out "
+        "corpus, which this org's workflow expects to be trunk (branch-gates "
+        "charter item 2).\n"
+        "  If you're on a session branch under RULING-359's cadence, this is "
+        "expected — commit here freely, then rebase/push/open one PR at session "
+        f"end. If you did not mean to be off trunk: git checkout {trunk}"
     )
 
 
@@ -291,10 +308,19 @@ def run_pre_commit(corpus_root: pathlib.Path | str | None = None) -> int:
         return 1
     root = pathlib.Path(root).resolve()
 
-    trunk_refusal = check_trunk_only(root)
-    if trunk_refusal is not None:
-        print(trunk_refusal, file=sys.stderr)
-        return 1
+    # RULING-360: demoted from fail-closed refusal to a warning. RULING-359's
+    # session-branch cadence mandates repeated commits to a non-trunk branch for a
+    # whole session on every corpus repo this org actively operates in - a
+    # fail-closed block here refused every one of those commits, forcing
+    # --no-verify (which skips every check below too, not just this one) as the
+    # only way to follow the cadence at all. The off-trunk condition is still
+    # real and still worth surfacing (a filing dying invisible on a branch is a
+    # real risk - branch-gates charter item 2's own rationale, unchanged) so it
+    # prints to stderr and the real gates below still run fail-closed regardless
+    # of branch.
+    trunk_warning = check_trunk_only(root)
+    if trunk_warning is not None:
+        print(trunk_warning, file=sys.stderr)
 
     unstaged = unstage_generated_boards(root)
     if unstaged:
