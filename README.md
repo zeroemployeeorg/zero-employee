@@ -351,6 +351,7 @@ make verify
 * [Getting Started Guide](docs/getting-started.md) — Step-by-step onboarding for new corpora.
 * [Release Process](docs/releasing.md) — Versioning, changelogs, and PyPI publishing.
 * [Swapping to Codex](docs/codex-swap.md) — How to move a session from Claude Code to OpenAI Codex and back, with verified commands, known gaps, and honest open items.
+* [Seat Identities](docs/seats.md) — `zeo seat`: give each seat its own real GitHub account, so a branch-protection review requirement is a genuine second check, not the same identity approving its own PR.
 * [Changelog](CHANGELOG.md) — What shipped, release by release.
 * [Contributing Guidelines](CONTRIBUTING.md) — Code style, test expectations, and PR rules.
 * [Security Policy](SECURITY.md) — How to report a vulnerability.

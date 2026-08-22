@@ -1,5 +1,26 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- **`zeo seat` — named GitHub-identity switching for a two-account review
+  split.** `zeo seat init` writes a commented-out example `.zeo/seats.toml`
+  and ensures `.zeo/` is gitignored itself (this file names real accounts);
+  `zeo seat use <name>`
+  prints `export ...` lines for `eval "$(zeo seat use <name>)"`, setting
+  `GH_CONFIG_DIR` (and `GIT_SSH_COMMAND`, if an SSH key is configured) so
+  `gh`/`git` in that shell operate as that seat's own real, separately-
+  authenticated GitHub account; `zeo seat` (bare) shows the current shell's
+  seat and every configured seat. Solves a real, concrete problem: GitHub
+  won't let an account approve its own pull request, so a required-review
+  branch-protection rule on a single-identity org either can't be used at
+  all, or gets toggled off and back on around every merge (which is not a
+  review). Ships **no real account names anywhere** — every org configures
+  its own seat → account mapping locally in `.zeo/seats.toml`; see
+  [`docs/seats.md`](docs/seats.md) for the full setup walkthrough,
+  including an optional tmux-window-name convention for automating the
+  switch per shell. (See `docs/seats.md` for the full design rationale.)
+
 ## [0.6.0] - 2026-08-22
 
 ### Added
