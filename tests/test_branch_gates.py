@@ -326,7 +326,10 @@ def test_check_trunk_only_none_on_trunk(tmp_path):
     assert check_trunk_only(root, trunk="main") is None
 
 
-def test_check_trunk_only_refuses_non_trunk(tmp_path):
+def test_check_trunk_only_warns_non_trunk(tmp_path):
+    """RULING-360: this is a warning string for the caller to print, not a
+    refusal — run_pre_commit no longer blocks the commit on a non-None return.
+    The off-trunk detection itself is unchanged; only its consequence is."""
     root = _corpus(tmp_path)
     _git(root, "checkout", "-q", "-b", "feat/some-work")
     reason = check_trunk_only(root, trunk="main")
@@ -345,15 +348,22 @@ def test_check_trunk_only_none_on_detached_head(tmp_path):
     assert check_trunk_only(root, trunk="main") is None
 
 
-def test_run_pre_commit_refuses_on_non_trunk_branch(tmp_path):
-    """The real gate: run_pre_commit (what `zeo hooks pre-commit` actually calls)
-    refuses on a non-trunk branch before it does anything else."""
+def test_run_pre_commit_warns_but_permits_non_trunk_branch(tmp_path, capsys):
+    """RULING-360: run_pre_commit (what `zeo hooks pre-commit` actually calls) no
+    longer refuses on a non-trunk branch — RULING-359's session-branch cadence
+    made this the mandatory Master/Sparring working shape, and a fail-closed
+    block here forced --no-verify (skipping every other check too) on every
+    commit of a compliant session. It still warns (stderr) and still runs the
+    real gates (commit-check, collision-check) on whatever's staged."""
     root = _corpus(tmp_path)
     _git(root, "checkout", "-q", "-b", "feat/some-work")
     (root / "test.md").write_text("content\n", encoding="utf-8")
     _git(root, "add", "test.md")
     rc = run_pre_commit(root)
-    assert rc == 1
+    assert rc == 0
+    err = capsys.readouterr().err
+    assert "feat/some-work" in err
+    assert "RULING-360" in err
 
 
 def test_run_pre_commit_permits_on_trunk(tmp_path):
@@ -364,11 +374,16 @@ def test_run_pre_commit_permits_on_trunk(tmp_path):
     assert rc == 0
 
 
-def test_run_pre_commit_end_to_end_real_commit_refused_then_permitted(tmp_path):
-    """DoD-shaped proof at the git-commit layer, not just the function layer:
-    a REAL `git commit` on a non-trunk branch is refused (the hook exits non-zero
-    and git aborts the commit -- no new commit object is created), and the SAME
-    content on trunk lands."""
+def test_run_pre_commit_end_to_end_real_commit_warns_off_trunk_then_lands_both(tmp_path):
+    """DoD-shaped proof at the git-commit layer, not just the function layer.
+
+    RULING-360: a REAL `git commit` on a non-trunk branch now WARNS (stderr) but
+    lands (the hook exits zero, git creates the commit) -- RULING-359's
+    session-branch cadence made off-trunk commits the mandatory Master/Sparring
+    shape, and the prior fail-closed refusal forced --no-verify (skipping every
+    other check, not just this one) on every compliant commit. Both the
+    off-trunk and the on-trunk commit land; only the off-trunk one carries the
+    warning."""
     root = _corpus(tmp_path)
     hooks_dir = root / ".git" / "hooks"
     hook_path = hooks_dir / "pre-commit"
@@ -384,17 +399,17 @@ def test_run_pre_commit_end_to_end_real_commit_refused_then_permitted(tmp_path):
     before_count = int(_git(root, "rev-list", "--count", "HEAD").stdout.strip())
 
     _git(root, "checkout", "-q", "-b", "feat/non-trunk-attempt")
-    (root / "off-trunk.md").write_text("should not land\n", encoding="utf-8")
+    (root / "off-trunk.md").write_text("should land, with a warning\n", encoding="utf-8")
     _git(root, "add", "off-trunk.md")
     result = subprocess.run(
         ["git", "-C", str(root), "commit", "-m", "non-trunk attempt"],
         capture_output=True,
         text=True,
     )
-    assert result.returncode != 0
-    assert "COMMIT BLOCKED" in result.stdout or "COMMIT BLOCKED" in result.stderr
-    after_refused_count = int(_git(root, "rev-list", "--count", "HEAD").stdout.strip())
-    assert after_refused_count == before_count  # no commit landed
+    assert result.returncode == 0
+    assert "RULING-360" in result.stdout or "RULING-360" in result.stderr
+    after_offtrunk_count = int(_git(root, "rev-list", "--count", "HEAD").stdout.strip())
+    assert after_offtrunk_count == before_count + 1  # the off-trunk commit landed
 
     _git(root, "checkout", "-q", "main")
     (root / "on-trunk.md").write_text("should land\n", encoding="utf-8")
@@ -405,5 +420,8 @@ def test_run_pre_commit_end_to_end_real_commit_refused_then_permitted(tmp_path):
         text=True,
     )
     assert result2.returncode == 0
+    # HEAD is `main` here, a sibling branch to feat/non-trunk-attempt -- main's own
+    # history gets only this one new commit, not both (the off-trunk commit lives
+    # on its own branch's history, verified above via that branch's own count).
     after_permitted_count = int(_git(root, "rev-list", "--count", "HEAD").stdout.strip())
     assert after_permitted_count == before_count + 1
