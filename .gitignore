@@ -26,3 +26,10 @@ uv.lock.bak
 # does not exist here yet. Anything cited by another artifact must land the
 # same session, per RULING-339 §4 — never left here to be lost.
 .master-scratch/
+
+# zeo seat identities (RULING-362) — .zeo/seats.toml names real GitHub
+# account identifiers for the Master/Sparring two-account review split.
+# This repo has no claude-md/CLAUDE.md (it's a work repo, not a corpus), so
+# `zeo seat init`'s own automatic gitignore-ensure step can't confirm this
+# file is protected here — pinned explicitly instead. Never commit this.
+.zeo/
