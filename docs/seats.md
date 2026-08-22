@@ -69,10 +69,13 @@ ssh_key = "~/.ssh/id_ed25519_sparring"
 account_login = "your-sparring-account"
 ```
 
-`.zeo/` is gitignored automatically by `zeo hooks install` — **this file
-names real accounts and should never be committed.** If you didn't run
-`zeo hooks install` in this corpus, add `.zeo/` to your own `.gitignore`
-by hand before editing `seats.toml`.
+`zeo seat init` itself ensures `.zeo/` is gitignored (it calls the same
+gitignore-writing step `zeo init`/`zeo hooks install` use) — **this file
+names real accounts and should never be committed.** If you're using a
+corpus root `zeo` couldn't discover (no `claude-md/CLAUDE.md` above your
+cwd), `zeo seat init` prints a warning rather than silently guessing; add
+`.zeo/` to your own `.gitignore` by hand in that case, before editing
+`seats.toml`.
 
 ### 4. Switch identity in a shell
 

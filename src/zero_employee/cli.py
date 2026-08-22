@@ -2677,14 +2677,35 @@ def _cmd_seat(argv: list[str]) -> int:
     sub, rest = argv[0], argv[1:]
 
     if sub == "init":
+        from .intake_authoring import ensure_zeo_gitignore
+
         force = "--force" in rest
         try:
             path = seats_mod.write_seats_template(root, force=force)
         except FileExistsError as exc:
             print(f"zeo seat init: {exc}", file=sys.stderr)
             return 1
+        # This file names real account identifiers -- ensure it's gitignored
+        # HERE, unconditionally, rather than relying on `zeo hooks install`/
+        # `zeo init` having already run in this corpus. Neither is a
+        # precondition of `zeo seat init` itself, and a user who skips
+        # straight to seat setup (a real, normal path -- someone adopting
+        # just the review-identity feature on an already-initialized corpus)
+        # must not be told their real account names are protected when they
+        # are not.
+        gitignored = ensure_zeo_gitignore(root) if root else False
         print(f"wrote {path}")
-        print("edit it to name your own seats, then `git ignore` it (see docs/seats.md) -- it names real accounts.")
+        if gitignored:
+            print(f"added .zeo/ to {pathlib.Path(root).resolve() / '.gitignore'} -- it names real accounts.")
+        elif root:
+            print(".zeo/ already gitignored -- it names real accounts, keep it that way.")
+        else:
+            print(
+                "WARNING: no corpus root found (not inside a claude-md/CLAUDE.md tree) -- "
+                "could not confirm .zeo/ is gitignored here. It names real accounts; "
+                "add '.zeo/' to your own .gitignore by hand before editing it."
+            )
+        print("edit it to name your own seats (see docs/seats.md).")
         return 0
 
     if sub == "use":

@@ -113,16 +113,30 @@ def load_seats(corpus_root: pathlib.Path | str | None = None) -> dict[str, SeatA
 
 def resolve_seat(name: str, corpus_root: pathlib.Path | str | None = None) -> SeatAccount:
     """Look up one named seat. Raises SeatsConfigError with the real seat
-    list if `name` isn't configured -- never returns a guessed/default seat."""
+    list if `name` isn't configured -- never returns a guessed/default seat.
+
+    Three distinct empty-result cases, each a different real message (a real
+    dead-end was measured here: telling a user to `zeo seat init` a file that
+    ALREADY EXISTS just makes `init` refuse with "already exists" next,
+    leaving no path forward stated anywhere -- the same file-exists check the
+    bare `zeo seat` handler already uses is applied here too, not just there):
+    no file at all; a real file with zero (all-commented) seats; a real file
+    with OTHER seats configured, just not this name.
+    """
     seats = load_seats(corpus_root)
     if name not in seats:
         path = seats_file_path(corpus_root)
-        known = ", ".join(sorted(seats)) or "(none configured)"
         if not seats:
+            if path.is_file():
+                raise SeatsConfigError(
+                    f"{path} exists but names no seats yet -- edit it to add a "
+                    f"[seats.{name}] entry (see docs/seats.md)."
+                )
             raise SeatsConfigError(
                 f"no seats.toml found at {path} (or $ZEO_SEATS_FILE). "
                 f"Run `zeo seat init` to create one, or see docs/seats.md."
             )
+        known = ", ".join(sorted(seats))
         raise SeatsConfigError(f"seat '{name}' not found in {path}. Configured seats: {known}")
     return seats[name]
 

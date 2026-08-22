@@ -5,7 +5,8 @@
 ### Added
 - **`zeo seat` — named GitHub-identity switching for a two-account review
   split.** `zeo seat init` writes a commented-out example `.zeo/seats.toml`
-  (gitignored automatically by `zeo hooks install`); `zeo seat use <name>`
+  and ensures `.zeo/` is gitignored itself (this file names real accounts);
+  `zeo seat use <name>`
   prints `export ...` lines for `eval "$(zeo seat use <name>)"`, setting
   `GH_CONFIG_DIR` (and `GIT_SSH_COMMAND`, if an SSH key is configured) so
   `gh`/`git` in that shell operate as that seat's own real, separately-

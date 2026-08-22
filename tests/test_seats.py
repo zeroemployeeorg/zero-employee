@@ -150,6 +150,24 @@ def test_resolve_seat_no_file_at_all_names_zeo_seat_init(tmp_path, monkeypatch):
         resolve_seat("anything", root)
 
 
+def test_resolve_seat_file_exists_but_empty_does_not_send_you_to_init_again(tmp_path, monkeypatch):
+    """Real dead-end this reproduces and fixes: after `zeo seat init`, the
+    file exists but is all-commented (zero real seats). resolve_seat used to
+    say 'run zeo seat init' regardless -- but init on an EXISTING file just
+    refuses with 'already exists', leaving no stated path forward. The
+    message must distinguish this from the true no-file-at-all case."""
+    monkeypatch.delenv("ZEO_SEATS_FILE", raising=False)
+    root = _corpus(tmp_path)
+    seats_dir = root / ".zeo"
+    seats_dir.mkdir()
+    (seats_dir / "seats.toml").write_text("# all commented out, zero real seats\n", encoding="utf-8")
+    with pytest.raises(SeatsConfigError) as exc_info:
+        resolve_seat("example-master", root)
+    message = str(exc_info.value)
+    assert "exists but names no seats yet" in message
+    assert "zeo seat init" not in message  # must NOT send them to re-run init on an existing file
+
+
 def test_resolve_seat_real_hit_returns_the_seataccount(tmp_path, monkeypatch):
     monkeypatch.delenv("ZEO_SEATS_FILE", raising=False)
     root = _corpus(tmp_path)
@@ -308,6 +326,42 @@ def test_zeo_seat_init_then_bare_shows_configured_seats(tmp_path, monkeypatch, c
     out = capsys.readouterr().out
     assert "no seats.toml found" not in out  # the file DOES exist now
     assert "current seat: (none set" in out
+
+
+def test_zeo_seat_init_actually_gitignores_zeo_dir_real_git_check_ignore(tmp_path, monkeypatch, capsys):
+    """Real, load-bearing security check: `.zeo/seats.toml` names real
+    account identifiers and must be gitignored the moment `zeo seat init`
+    creates it -- NOT dependent on the user having separately run `zeo
+    hooks install` or `zeo init` first (docs previously, wrongly, claimed
+    `zeo hooks install` did this; it does not -- `ensure_zeo_gitignore` is
+    only called by `init_corpus`). Proven with a REAL git repo and REAL
+    `git check-ignore`, not a string check on .gitignore's own content."""
+    import subprocess
+
+    monkeypatch.delenv("ZEO_SEATS_FILE", raising=False)
+    root = _corpus(tmp_path)
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    monkeypatch.chdir(root)
+
+    rc = cli.main(["seat", "init"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "added .zeo/ to" in out or "already gitignored" in out
+
+    # the real, authoritative check -- does git itself agree this path is
+    # ignored, not just "does .gitignore contain a string that looks right".
+    result = subprocess.run(
+        ["git", "check-ignore", str(root / ".zeo" / "seats.toml")],
+        cwd=root,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, (
+        f"git check-ignore did NOT consider .zeo/seats.toml ignored "
+        f"(rc={result.returncode}, stdout={result.stdout!r}, stderr={result.stderr!r}) "
+        f"-- the exact real-world failure this test reproduces: a user's real "
+        f"account names in this file could be committed to a public repo."
+    )
 
 
 def test_zeo_seat_init_twice_without_force_fails_clean(tmp_path, monkeypatch, capsys):
