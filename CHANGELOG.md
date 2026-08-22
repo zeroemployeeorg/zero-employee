@@ -1,5 +1,61 @@
 # Changelog
 
+## [0.6.0] - 2026-08-22
+
+### Added
+- **`--codex` now installs Codex-native persona files, not just the `AGENTS.md`
+  bridge.** `zeo scaffold ... --codex` writes
+  `.codex/agents/{zeo-master,zeo-stream,zeo-sparring}.toml` alongside the
+  existing `AGENTS.md` symlink — human-in-the-loop persona equivalents of the
+  `.claude/agents/*.md` seats, generalized from the one real,
+  behaviorally-verified persona this org had shipped by hand
+  (`org/.codex/agents/zeo-stream.toml`). **These personas load only under an
+  interactive Codex TUI session where a human explicitly invokes one by
+  name** — never under `codex exec`/GitHub Action (non-interactive) dispatch,
+  which runs a plain prompt and never reads a persona file at all. Each
+  shipped file states this caveat in its own text. Never clobbers an existing
+  file of the same name, same discipline as the `--agents` bridge.
+  (`codex-swap-ux` SOW-1)
+
+### Fixed
+- **Removed a hardcoded `model = "gpt-5.1-codex"` pin from every shipped
+  `.codex/agents/*.toml` persona.** This is exactly what blocked a real
+  interactive-Codex-TUI delegation with a live API `400
+  invalid_request_error` the first time this trigger class was actually
+  exercised end-to-end — the pinned model string had gone stale on the
+  account under test, and nothing in `codex --help`, `codex exec --help`, or
+  `codex features list` offers a reliable way for a shipped template to
+  pre-validate a model string against a given account's entitlements. A
+  persona now inherits whatever model the parent session/account is actually
+  configured to use (from `~/.codex/config.toml`), instead of a string that
+  can silently go stale. (`codex-multi-tool-adoption` SOW-10)
+- **The corpus pre-commit trunk-only gate (`check_trunk_only`) no longer
+  blocks a commit — it warns.** The gate fail-closed refused any commit in a
+  corpus repo with `HEAD` off trunk, citing `RULING-324`. This directly
+  conflicted with `RULING-359`'s own session-branch cadence (commit
+  repeatedly to a non-trunk branch for a whole session, on every
+  branch-protected repo) — every commit the cadence required was refused,
+  which left `git commit --no-verify` (skipping every other check in
+  `run_pre_commit`, not just the trunk one) as the only way to comply with
+  the cadence at all. `check_trunk_only` now prints its finding to stderr as
+  a warning, with the citation corrected to name `branch-gates` charter item
+  2 (its real source) rather than a bare `RULING-324`; the real gates
+  (per-file commit-check, corpus-wide ruling/SOW collision check, board
+  unstaging) still run fail-closed on every commit regardless of branch.
+  (`RULING-360`)
+
+### Changed
+- The shipped `zeo-master`/`zeo-sparring` scaffold templates (both the
+  Claude Code `.md` and Codex `.toml` shapes) now teach two doctrine updates
+  every future `zeo scaffold`/`zeo init` install carries forward: the
+  session-branch-then-one-PR merge cadence for a server-protected trunk
+  (`RULING-359`), and that a seat name (`zeo-sparring`, `zeo-master`) is a
+  TYPE used to spawn an agent, not an address for an already-running
+  instance — a Master session should resolve whether a real peer instance
+  exists before spawning a fresh one "to consult," and a spawned subagent
+  answering on another seat's behalf is not a real consult and must never be
+  reported as one (`RULING-361`).
+
 ## [0.5.0] - 2026-08-21
 
 ### Added
