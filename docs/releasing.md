@@ -44,7 +44,14 @@ Create under **Repo → Settings → Environments** (or `gh api`):
 2. Bump `version` in `pyproject.toml`.
 3. Update `CHANGELOG.md`.
 4. Ensure CI is green (`make verify` / pytest).
-5. Commit and push to `zeroemployeeorg/zero-employee` `main`.
+5. Commit the version bump + changelog on a branch, open a PR against
+   `zeroemployeeorg/zero-employee` `main`, and merge it once `zeo`/`test`
+   (the required status checks) pass and it's approved. **A direct push to
+   `main` is rejected** — branch protection requires a PR (required PR
+   review + required status checks, `enforce_admins: true`). This is a real
+   change from earlier releases, made deliberately after `codex-concurrent-
+   seating` found that neither Codex's sandbox nor this repo's own local
+   config mechanically stopped a force-push to `main` for either tool.
 
 ### TestPyPI first
 
