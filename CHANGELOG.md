@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- **Execution evidence seam (A1–A6).** Product glossary in `CONTEXT.md`;
+  `ExecutorCapabilities` and JSON `ExecutionReceipt` schemas; `zeo execution
+  validate|import`; optional Sandcastle adapter (fixtures only, no Node);
+  `zeo dispatch` exclusive-ownership library; `docs/non-goals/` (R1–R7);
+  `.release/` fragments gated in CI.
+
 ## [0.7.0] - 2026-08-22
 
 ### Added

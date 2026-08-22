@@ -66,6 +66,10 @@ zeo = "zero_employee.cli:cli_entry"
 # identical Typer-migrated CLI. RULING-093's legacy_name reasoning, applied to a command.
 sow-lint = "zero_employee.cli:cli_entry"
 
+# Sandcastle evidence adapter lives in zero_employee.adapters.sandcastle and has
+# no extra runtime dependencies (JSON fixtures only). Do not add Node or the
+# Sandcastle npm package to core.
+
 # ── Build System Configuration ───────────────────────────────────────────
 [build-system]
 requires = ["hatchling"]
@@ -139,6 +143,9 @@ addopts = [
     "-ra",
     "--strict-markers",
     "--strict-config",
+]
+markers = [
+    "adapter: optional harness adapter tests (fixtures only; no Node)",
 ]
 filterwarnings = [
     "error",

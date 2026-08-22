@@ -6,7 +6,20 @@
 - **PATCH** — bugfixes, docs, leak-scan hardening.
 - **MINOR** — features (new verbs, non-breaking CLI).
 - **MAJOR** — breaking CLI or import changes (allowed in 0.x with a clear changelog note).
+  A 0.x break is still **breaking**, not silently `minor`.
 - Single source of truth: `version` in `pyproject.toml`. Sync tags as `vX.Y.Z`.
+
+## Release fragments (PR gate)
+
+User-visible CLI, schema, scaffold template, hook, or exported Python API changes
+must land with a file under [`.release/`](../.release/) that declares `kind:` as one of
+`patch`, `minor`, `breaking`, or `no-user-change`. CI runs
+`python scripts/check_release_fragment.py`. This is the PR-time declaration;
+[`CHANGELOG.md`](../CHANGELOG.md) remains the human release note at version bump.
+
+Public paths: `src/zero_employee/cli.py`, `schemas/`, `scaffold_templates/`,
+`hooks.py`, `hooks_templates/`, `execution.py`, `dispatch.py`, `adapters/`,
+and `__init__.py`.
 
 ## Trusted publishing (OIDC — no API tokens in the repo)
 

@@ -649,10 +649,21 @@ def _commit_check_corpus(root) -> int:
     sow_collisions = {p: [fi for fi in fis if fi.code == "n-collision"] for p, fis in sow_collisions.items()}
     sow_collisions = {p: fis for p, fis in sow_collisions.items() if fis}
 
-    if not ruling_collisions and not sow_collisions:
+    from .execution import iter_execution_receipts, validate_receipt_path
+
+    receipt_errors: list[str] = []
+    receipt_files = iter_execution_receipts(pathlib.Path(root))
+    for rp in receipt_files:
+        _rec, errs = validate_receipt_path(rp)
+        receipt_errors.extend(errs)
+
+    if not ruling_collisions and not sow_collisions and not receipt_errors:
+        extra = ""
+        if receipt_files:
+            extra = f", {len(receipt_files)} execution receipt(s) valid"
         print(
             f"COMMIT-CHECK-CORPUS: 0 ruling-number collisions across {len(files_fm)} ruling "
-            f"file(s), 0 SOW n-collisions across {len(sow_files_fm)} SOW file(s)"
+            f"file(s), 0 SOW n-collisions across {len(sow_files_fm)} SOW file(s){extra}"
         )
         return 0
     if ruling_collisions:
@@ -665,6 +676,10 @@ def _commit_check_corpus(root) -> int:
         for path, findings in sorted(sow_collisions.items()):
             for fi in findings:
                 print(f"    {_SYM.get(fi.severity, '?')} [{fi.code}] {path}: {fi.message}")
+    if receipt_errors:
+        print(f"COMMIT-CHECK-CORPUS: {len(receipt_errors)} execution receipt error(s)")
+        for e in receipt_errors:
+            print(f"    {_SYM.get(ERROR, '?')} [execution-receipt] {e}")
     return 1
 
 
@@ -1059,6 +1074,12 @@ USAGE
                                   not yet shipped -- deferred and named in the output).
                                   Read-only against the target repo; writes ONE SOW,
                                   status: FINDING, into the SOWS repo, never the work repo.
+  zeo seat [init|use NAME]
+                                  Named GitHub-identity switching (docs/seats.md).
+  zeo execution validate PATH | zeo execution import PATH [--out PATH]
+                                  Validate or canonicalize a JSON execution receipt.
+  zeo dispatch acquire|check-remote|cleanup
+                                  Exclusive ownership for unattended mutation (library).
   zeo --inbox <stream> [path]
                                   Show ONE stream's open questions + rulings that answered it.
                                   Path optional - run it from anywhere: zeo --inbox example-stream
@@ -2736,6 +2757,140 @@ def _cmd_artifact(argv: list[str]) -> int:
     return 2
 
 
+def _cmd_execution(argv: list[str]) -> int:
+    """zeo execution validate|import PATH — governed JSON receipts, not transcripts."""
+    from .execution import import_receipt_json, validate_receipt_path, write_canonical_receipt
+
+    if not argv or argv[0] in ("-h", "--help"):
+        print("Usage: zeo execution validate PATH | zeo execution import PATH [--out PATH]", file=sys.stderr)
+        return 0 if argv and argv[0] in ("-h", "--help") else 2
+    sub = argv[0]
+    rest = argv[1:]
+    if sub == "validate":
+        if not rest:
+            print("Usage: zeo execution validate PATH", file=sys.stderr)
+            return 2
+        path = pathlib.Path(rest[0])
+        receipt, errors = validate_receipt_path(path)
+        if errors:
+            for e in errors:
+                print(e, file=sys.stderr)
+            return 1
+        print(f"valid: {path} execution_id={receipt.execution_id} termination={receipt.termination}")
+        return 0
+    if sub == "import":
+        out = None
+        paths = []
+        i = 0
+        while i < len(rest):
+            if rest[i] == "--out" and i + 1 < len(rest):
+                out = pathlib.Path(rest[i + 1])
+                i += 2
+                continue
+            paths.append(rest[i])
+            i += 1
+        if not paths:
+            print("Usage: zeo execution import PATH [--out PATH]", file=sys.stderr)
+            return 2
+        source = pathlib.Path(paths[0])
+        try:
+            receipt = import_receipt_json(source)
+        except ValueError:
+            from .adapters.sandcastle import SandcastleEvidenceAdapter
+
+            try:
+                receipt = SandcastleEvidenceAdapter().import_receipt(source)
+            except Exception as exc:
+                print(f"zeo execution import: {exc}", file=sys.stderr)
+                return 1
+        dest = out or source.with_suffix(".canonical.execution.json")
+        if dest.suffix != ".json":
+            dest = dest.with_name(dest.name + ".execution.json")
+        write_canonical_receipt(receipt, dest)
+        print(f"imported: {dest} execution_id={receipt.execution_id}")
+        return 0
+    print(f"zeo execution: unknown subcommand {sub!r}", file=sys.stderr)
+    return 2
+
+
+def _cmd_dispatch(argv: list[str]) -> int:
+    """zeo dispatch acquire|check-remote|cleanup — unattended ownership (library, not a bot)."""
+    from . import dispatch as dispatch_mod
+
+    if not argv or argv[0] in ("-h", "--help"):
+        print(
+            "Usage: zeo dispatch acquire --repo PATH --branch NAME --execution-id ID [--stream NAME]\n"
+            "       zeo dispatch check-remote --repo PATH --branch NAME --expect-sha SHA\n"
+            "       zeo dispatch cleanup --repo PATH --key KEY [--authorize]",
+            file=sys.stderr,
+        )
+        return 0 if argv and argv[0] in ("-h", "--help") else 2
+
+    def _flag(name: str, default: str | None = None) -> str | None:
+        key = f"--{name}"
+        if key in argv:
+            i = argv.index(key)
+            if i + 1 < len(argv):
+                return argv[i + 1]
+        return default
+
+    sub = argv[0]
+    try:
+        if sub == "acquire":
+            repo = pathlib.Path(_flag("repo") or ".")
+            branch = _flag("branch")
+            stream = _flag("stream")
+            execution_id = _flag("execution-id")
+            if not execution_id or not (branch or stream):
+                print("zeo dispatch acquire requires --execution-id and --branch or --stream", file=sys.stderr)
+                return 2
+            repo_name = _git_repo_name(repo)
+            key = dispatch_mod.ownership_key(repository=repo_name, branch=branch, stream=stream)
+            result = dispatch_mod.acquire(repo, key=key, execution_id=execution_id, branch=branch or f"stream/{stream}")
+            if not result.acquired:
+                print(f"REFUSED key={key} lock_held_by={result.lock.get('execution_id')} receipt={result.receipt_path}")
+                return 1
+            print(f"ACQUIRED key={key} execution_id={execution_id} head={result.lock.get('head_sha')}")
+            return 0
+        if sub == "check-remote":
+            repo = pathlib.Path(_flag("repo") or ".")
+            branch = _flag("branch")
+            expect = _flag("expect-sha")
+            if not branch or not expect:
+                print("zeo dispatch check-remote requires --branch and --expect-sha", file=sys.stderr)
+                return 2
+            dispatch_mod.check_remote_advancement(repo, branch, expect)
+            print(f"REMOTE-OK {branch} still at {expect}")
+            return 0
+        if sub == "cleanup":
+            repo = pathlib.Path(_flag("repo") or ".")
+            key = _flag("key")
+            authorize = "--authorize" in argv
+            if not key:
+                print("zeo dispatch cleanup requires --key", file=sys.stderr)
+                return 2
+            lock = dispatch_mod.cleanup(repo, key, authorize=authorize)
+            print(f"CLEANED key={key} status={lock.get('status')}")
+            return 0
+    except dispatch_mod.DispatchError as exc:
+        print(f"zeo dispatch: {exc}", file=sys.stderr)
+        return 1
+    print(f"zeo dispatch: unknown subcommand {sub!r}", file=sys.stderr)
+    return 2
+
+
+def _git_repo_name(repo: pathlib.Path) -> str:
+    proc = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "--show-toplevel"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode == 0 and proc.stdout.strip():
+        return pathlib.Path(proc.stdout.strip()).name
+    return repo.resolve().name
+
+
 def _print_hooks_install(info: dict) -> None:
     print(f"HOOKS-INSTALL: wrote {len(info['written'])} template(s) under tools/hooks/")
     for w in info["written"]:
@@ -2845,6 +3000,10 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_seat(args[1:])
     if args and args[0] == "artifact":
         return _cmd_artifact(args[1:])
+    if args and args[0] == "execution":
+        return _cmd_execution(args[1:])
+    if args and args[0] == "dispatch":
+        return _cmd_dispatch(args[1:])
     backfill_project = None
     locate_stream_name = None
     want_progress = None
@@ -3975,6 +4134,8 @@ _VERB_NAMES = (
     "doctor",
     "artifact",
     "seat",
+    "execution",
+    "dispatch",
 )
 
 app = typer.Typer(
@@ -4146,6 +4307,18 @@ def _typer_seat(ctx: typer.Context):
     """zeo seat [init|use NAME] — named GitHub-identity switching for a
     two-account review split (see docs/seats.md)."""
     raise typer.Exit(main(["seat", *ctx.args]))
+
+
+@app.command("execution", **_PASSTHROUGH)
+def _typer_execution(ctx: typer.Context):
+    """zeo execution validate|import PATH — JSON execution receipts."""
+    raise typer.Exit(main(["execution", *ctx.args]))
+
+
+@app.command("dispatch", **_PASSTHROUGH)
+def _typer_dispatch(ctx: typer.Context):
+    """zeo dispatch acquire|check-remote|cleanup — exclusive unattended ownership."""
+    raise typer.Exit(main(["dispatch", *ctx.args]))
 
 
 def cli_entry() -> None:
