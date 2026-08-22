@@ -2633,6 +2633,77 @@ def _cmd_doctor(argv: list[str] | None = None, flags: dict | None = None, root: 
     return exit_rc
 
 
+def _cmd_seat(argv: list[str]) -> int:
+    """zeo seat -- named-identity switching for a two-(or-more)-account review
+    split. `zeo seat init` writes a commented .zeo/seats.toml template; `zeo
+    seat use <name>` prints `export ...` lines for `eval "$(zeo seat use
+    <name>)"`; `zeo seat` (bare) shows the current shell's seat and every
+    configured seat. No real account names live in this tool -- see
+    docs/seats.md and seats.SeatsConfigError for the config contract.
+    """
+    from . import seats as seats_mod
+
+    root = _discover_root(None)
+
+    if not argv:
+        current = seats_mod.current_seat_name()
+        try:
+            configured = seats_mod.load_seats(root)
+        except seats_mod.SeatsConfigError as exc:
+            print(f"zeo seat: {exc}", file=sys.stderr)
+            return 1
+        if current:
+            print(f"current seat: {current}")
+        else:
+            print("current seat: (none set -- $ZEO_SEAT is unset)")
+        if configured:
+            print("configured seats:")
+            for name, acct in sorted(configured.items()):
+                marker = " *" if name == current else ""
+                login = f" ({acct.account_login})" if acct.account_login else ""
+                print(f"  {name}{login}{marker}")
+        else:
+            path = seats_mod.seats_file_path(root)
+            if path.is_file():
+                # a real file exists but names zero real (uncommented) seats
+                # -- e.g. straight after `zeo seat init`, before it's edited.
+                # Distinct message from "no file at all" so a user who just
+                # ran init isn't told to run it again.
+                print(f"{path} exists but names no seats yet -- edit it to add [seats.<name>] entries")
+            else:
+                print(f"no seats.toml found at {path} (or $ZEO_SEATS_FILE) -- run `zeo seat init`")
+        return 0
+
+    sub, rest = argv[0], argv[1:]
+
+    if sub == "init":
+        force = "--force" in rest
+        try:
+            path = seats_mod.write_seats_template(root, force=force)
+        except FileExistsError as exc:
+            print(f"zeo seat init: {exc}", file=sys.stderr)
+            return 1
+        print(f"wrote {path}")
+        print("edit it to name your own seats, then `git ignore` it (see docs/seats.md) -- it names real accounts.")
+        return 0
+
+    if sub == "use":
+        if not rest:
+            print("Usage: zeo seat use <name>", file=sys.stderr)
+            return 2
+        name = rest[0]
+        try:
+            seat = seats_mod.resolve_seat(name, root)
+        except seats_mod.SeatsConfigError as exc:
+            print(f"zeo seat use: {exc}", file=sys.stderr)
+            return 1
+        sys.stdout.write(seats_mod.render_seat_use_script(seat))
+        return 0
+
+    print(f"zeo seat: unknown subcommand {sub!r}. Usage: zeo seat [init [--force] | use <name>]", file=sys.stderr)
+    return 2
+
+
 def _cmd_artifact(argv: list[str]) -> int:
     """Thin alias: zeo artifact set → zeo sow set (SOW genre)."""
     if not argv:
@@ -2749,6 +2820,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_intake(args[1:])
     if args and args[0] == "doctor":
         return _cmd_doctor(args[1:])
+    if args and args[0] == "seat":
+        return _cmd_seat(args[1:])
     if args and args[0] == "artifact":
         return _cmd_artifact(args[1:])
     backfill_project = None
@@ -3880,6 +3953,7 @@ _VERB_NAMES = (
     "intake",
     "doctor",
     "artifact",
+    "seat",
 )
 
 app = typer.Typer(
@@ -4044,6 +4118,13 @@ def _typer_doctor(ctx: typer.Context):
 def _typer_artifact(ctx: typer.Context):
     """zeo artifact set FILE KEY VALUE (thin alias onto zeo sow set)."""
     raise typer.Exit(main(["artifact", *ctx.args]))
+
+
+@app.command("seat", **_PASSTHROUGH)
+def _typer_seat(ctx: typer.Context):
+    """zeo seat [init|use NAME] — named GitHub-identity switching for a
+    two-account review split (see docs/seats.md)."""
+    raise typer.Exit(main(["seat", *ctx.args]))
 
 
 def cli_entry() -> None:
