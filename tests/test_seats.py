@@ -332,10 +332,14 @@ def test_zeo_seat_init_actually_gitignores_zeo_dir_real_git_check_ignore(tmp_pat
     """Real, load-bearing security check: `.zeo/seats.toml` names real
     account identifiers and must be gitignored the moment `zeo seat init`
     creates it -- NOT dependent on the user having separately run `zeo
-    hooks install` or `zeo init` first (docs previously, wrongly, claimed
-    `zeo hooks install` did this; it does not -- `ensure_zeo_gitignore` is
-    only called by `init_corpus`). Proven with a REAL git repo and REAL
-    `git check-ignore`, not a string check on .gitignore's own content."""
+    hooks install` or `zeo init` first. (Both of THOSE commands do already
+    gitignore `.zeo/`, via ensure_board_gitignore/ensure_zeo_gitignore
+    respectively -- confirmed via Sparring's own re-verification of this
+    fix; the real, narrower gap this test guards is that `zeo seat init`
+    ran standalone, with neither prerequisite command ever run in this
+    corpus, previously left the file unprotected.) Proven with a REAL git
+    repo and REAL `git check-ignore`, not a string check on .gitignore's
+    own content."""
     import subprocess
 
     monkeypatch.delenv("ZEO_SEATS_FILE", raising=False)
