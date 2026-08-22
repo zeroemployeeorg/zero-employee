@@ -14,6 +14,7 @@ def test_init_corpus_core_only(tmp_path):
     assert (root / "ruling").is_dir()
     assert "@import" in (root / "CLAUDE.md").read_text(encoding="utf-8")
     assert "Rev 17" in (root / "claude-md" / "CLAUDE.md").read_text(encoding="utf-8")
+    assert (root / "governance" / "GOVERNANCE.md").is_file()
     assert not (root / ".cursor").exists()
     assert not (root / ".agents").exists()
     assert not (root / "GEMINI.md").exists()

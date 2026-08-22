@@ -1080,6 +1080,16 @@ USAGE
                                   Validate or canonicalize a JSON execution receipt.
   zeo dispatch acquire|check-remote|cleanup
                                   Exclusive ownership for unattended mutation (library).
+  zeo relay register|resolve|send|receive|ack|status|start
+                                  Seat-instance registry and runtime message ledger.
+  zeo workspace create|list|retire
+                                  Git worktree per seat instance.
+  zeo mcp-server
+                                  Stdio MCP server for structured ZEO tools.
+  zeo test-runtime codex --scenario NAME
+                                  Codex compatibility canary (fake runtime in CI).
+  zeo doctor --codex
+                                  Codex capability and relay-registry diagnostics.
   zeo --inbox <stream> [path]
                                   Show ONE stream's open questions + rulings that answered it.
                                   Path optional - run it from anywhere: zeo --inbox example-stream
@@ -2610,6 +2620,21 @@ def _cmd_intake(argv: list[str]) -> int:
 def _cmd_doctor(argv: list[str] | None = None, flags: dict | None = None, root: pathlib.Path | None = None) -> int:
     from .sow_authoring import doctor_file, git_changed_markdown
 
+    raw_argv = list(argv or [])
+    if "--codex" in raw_argv or (flags or {}).get("codex"):
+        import json as json_mod
+
+        from .runtimes.codex import doctor_codex
+
+        root_flag = None
+        if "--root" in raw_argv:
+            i = raw_argv.index("--root")
+            if i + 1 < len(raw_argv):
+                root_flag = raw_argv[i + 1]
+        corpus = root or _discover_root(root_flag)
+        print(json_mod.dumps(doctor_codex(corpus), indent=2, default=str))
+        return 0
+
     if flags is not None and root is not None:
         argv_positionals = argv or []
         argv_flags = flags
@@ -2879,6 +2904,299 @@ def _cmd_dispatch(argv: list[str]) -> int:
     return 2
 
 
+def _relay_flag(argv: list[str], name: str, default: str | None = None) -> str | None:
+    key = f"--{name}"
+    if key in argv:
+        i = argv.index(key)
+        if i + 1 < len(argv):
+            return argv[i + 1]
+    return default
+
+
+def _relay_usage() -> str:
+    return (
+        "Usage:\n"
+        "  zeo relay register --seat SEAT --instance ID --runtime NAME [--thread-id ID]\n"
+        "  zeo relay resolve --seat SEAT|--instance ID [--json]\n"
+        "  zeo relay whoami [--instance ID] [--json]\n"
+        "  zeo relay send --from ID --to ID --kind KIND [--body TEXT|--body-file PATH]\n"
+        "  zeo relay receive --instance ID [--json]\n"
+        "  zeo relay ack --message ID\n"
+        "  zeo relay status [--json]\n"
+        "  zeo relay retire --instance ID\n"
+        "  zeo relay start --master zeo-master --sparring zeo-sparring [--once|--fake|--live]\n"
+        "  zeo relay file-verdict --path ruling/NAME.md --body-file PATH\n"
+    )
+
+
+def _cmd_relay(argv: list[str]) -> int:
+    import json as json_mod
+
+    from . import relay as relay_mod
+    from .runtimes.codex import FakeCodexRuntime, LiveCodexRuntime, tick
+
+    if not argv or argv[0] in ("-h", "--help"):
+        print(_relay_usage(), file=sys.stderr)
+        return 0 if argv and argv[0] in ("-h", "--help") else 2
+    sub = argv[0]
+    rest = argv[1:]
+    want_json = "--json" in rest or "--json" in argv
+    root = _discover_root(_relay_flag(rest, "root")) or _discover_root(None)
+    if root is None and sub != "start":
+        print("zeo relay: run from inside a corpus (or pass --root PATH)", file=sys.stderr)
+        return 2
+    try:
+        if sub == "register":
+            seat = _relay_flag(rest, "seat")
+            instance = _relay_flag(rest, "instance")
+            runtime = _relay_flag(rest, "runtime") or "codex"
+            if not seat or not instance:
+                print("zeo relay register requires --seat and --instance", file=sys.stderr)
+                return 2
+            inst = relay_mod.register(
+                root,
+                seat=seat,
+                instance_id=instance,
+                runtime=runtime,
+                thread_id=_relay_flag(rest, "thread-id"),
+                worktree=_relay_flag(rest, "worktree"),
+                branch=_relay_flag(rest, "branch"),
+                stream=_relay_flag(rest, "stream"),
+            )
+            print(
+                json_mod.dumps(inst.model_dump(mode="json"), indent=2)
+                if want_json
+                else f"REGISTERED {inst.instance_id} seat={inst.seat_type}"
+            )
+            return 0
+        if sub == "resolve":
+            found = relay_mod.resolve(
+                root,
+                seat=_relay_flag(rest, "seat"),
+                instance_id=_relay_flag(rest, "instance"),
+            )
+            payload = [i.model_dump(mode="json") for i in found]
+            if want_json:
+                seat = _relay_flag(rest, "seat")
+                extra = {"instances": payload}
+                if seat:
+                    extra["should_spawn"] = relay_mod.should_spawn(seat, root)
+                print(json_mod.dumps(extra, indent=2, default=str))
+            elif not found:
+                print("NO-INSTANCE")
+            else:
+                for i in found:
+                    print(f"{i.instance_id} seat={i.seat_type} status={i.status} thread={i.runtime_address or '-'}")
+            return 0
+        if sub == "whoami":
+            inst = relay_mod.whoami(root, _relay_flag(rest, "instance"))
+            print(
+                json_mod.dumps(inst.model_dump(mode="json"), indent=2)
+                if want_json
+                else f"{inst.instance_id} seat={inst.seat_type}"
+            )
+            return 0
+        if sub == "send":
+            body_file = _relay_flag(rest, "body-file")
+            body = _relay_flag(rest, "body") or ""
+            if body_file:
+                body = pathlib.Path(body_file).read_text(encoding="utf-8")
+            src = _relay_flag(rest, "from")
+            dest = _relay_flag(rest, "to")
+            kind = _relay_flag(rest, "kind")
+            if not src or not dest or not kind:
+                print("zeo relay send requires --from --to --kind", file=sys.stderr)
+                return 2
+            refs = [rest[i + 1] for i, a in enumerate(rest) if a == "--artifact-ref" and i + 1 < len(rest)]
+            msg = relay_mod.send(
+                root,
+                from_instance=src,
+                to_instance=dest,
+                kind=kind,
+                body=body,
+                conversation_id=_relay_flag(rest, "conversation-id"),
+                reply_to=_relay_flag(rest, "reply-to"),
+                artifact_refs=refs,
+                message_id=_relay_flag(rest, "message-id"),
+            )
+            print(
+                json_mod.dumps(msg.model_dump(mode="json"), indent=2)
+                if want_json
+                else f"QUEUED {msg.message_id} -> {msg.to_instance}"
+            )
+            return 0
+        if sub == "receive":
+            instance = _relay_flag(rest, "instance")
+            if not instance:
+                print("zeo relay receive requires --instance", file=sys.stderr)
+                return 2
+            msgs = relay_mod.receive(root, instance)
+            if want_json:
+                print(json_mod.dumps([m.model_dump(mode="json") for m in msgs], indent=2, default=str))
+            else:
+                for m in msgs:
+                    print(f"{m.message_id} {m.state} {m.kind} from={m.from_instance}")
+            return 0
+        if sub == "ack":
+            mid = _relay_flag(rest, "message")
+            if not mid:
+                print("zeo relay ack requires --message", file=sys.stderr)
+                return 2
+            msg = relay_mod.ack(root, mid)
+            print(f"ACKED {msg.message_id}")
+            return 0
+        if sub == "status":
+            payload = relay_mod.status_payload(root)
+            print(
+                json_mod.dumps(payload, indent=2, default=str)
+                if want_json
+                else f"instances={len(payload['instances'])} queued={payload['queued']} acked={payload['acked']} dead={payload['dead']}"
+            )
+            return 0
+        if sub == "retire":
+            instance = _relay_flag(rest, "instance")
+            if not instance:
+                print("zeo relay retire requires --instance", file=sys.stderr)
+                return 2
+            inst = relay_mod.retire(root, instance)
+            print(f"RETIRED {inst.instance_id}")
+            return 0
+        if sub == "file-verdict":
+            path = _relay_flag(rest, "path")
+            body_file = _relay_flag(rest, "body-file")
+            body = _relay_flag(rest, "body") or ""
+            if body_file:
+                body = pathlib.Path(body_file).read_text(encoding="utf-8")
+            if not path:
+                print("zeo relay file-verdict requires --path ruling/NAME.md", file=sys.stderr)
+                return 2
+            dest = relay_mod.file_verdict(root, dest_rel=path, body=body)
+            print(f"FILED {dest}")
+            return 0
+        if sub == "start":
+            if root is None:
+                print("zeo relay start: run from inside a corpus", file=sys.stderr)
+                return 2
+            live = "--live" in rest
+            runtime = LiveCodexRuntime() if live else FakeCodexRuntime()
+            master_seat = _relay_flag(rest, "master") or "zeo-master"
+            sparring_seat = _relay_flag(rest, "sparring") or "zeo-sparring"
+            master_id = _relay_flag(rest, "master-instance") or "master-local"
+            sparring_id = _relay_flag(rest, "sparring-instance") or "sparring-local"
+            m_thread = runtime.attach_or_start("master", root)
+            s_thread = runtime.attach_or_start("sparring", root)
+            relay_mod.register(root, seat=master_seat, instance_id=master_id, runtime="codex", thread_id=m_thread)
+            relay_mod.register(root, seat=sparring_seat, instance_id=sparring_id, runtime="codex", thread_id=s_thread)
+            pidf = relay_mod.relay_root(root) / "supervisor.json"
+            relay_mod._atomic_write(
+                pidf,
+                json_mod.dumps(
+                    {"master": master_id, "sparring": sparring_id, "runtime": "live" if live else "fake"},
+                    indent=2,
+                )
+                + "\n",
+            )
+            once = "--once" in rest or not live
+            result = tick(root, runtime)
+            print(json_mod.dumps({"master": master_id, "sparring": sparring_id, "tick": result}, indent=2))
+            if once:
+                return 0
+            import time
+
+            while True:
+                time.sleep(1.0)
+                tick(root, runtime)
+        print(f"zeo relay: unknown subcommand {sub!r}", file=sys.stderr)
+        return 2
+    except relay_mod.RelayError as exc:
+        print(f"zeo relay: {exc}", file=sys.stderr)
+        return 1
+
+
+def _cmd_workspace(argv: list[str]) -> int:
+    import json as json_mod
+
+    from . import workspace as ws
+
+    if not argv or argv[0] in ("-h", "--help"):
+        print(
+            "Usage: zeo workspace create --seat SEAT --instance ID [--stream NAME] [--host-repo PATH]\n"
+            "       zeo workspace list\n"
+            "       zeo workspace retire --instance ID",
+            file=sys.stderr,
+        )
+        return 0 if argv and argv[0] in ("-h", "--help") else 2
+    sub = argv[0]
+    rest = argv[1:]
+    root = _discover_root(_relay_flag(rest, "root")) or _discover_root(None)
+    if root is None:
+        print("zeo workspace: run from inside a corpus", file=sys.stderr)
+        return 2
+    try:
+        if sub == "create":
+            seat = _relay_flag(rest, "seat")
+            instance = _relay_flag(rest, "instance")
+            if not seat or not instance:
+                print("zeo workspace create requires --seat and --instance", file=sys.stderr)
+                return 2
+            host = _relay_flag(rest, "host-repo")
+            info = ws.create(
+                root,
+                seat=seat,
+                instance_id=instance,
+                host_repo=pathlib.Path(host) if host else None,
+                stream=_relay_flag(rest, "stream"),
+                round_id=_relay_flag(rest, "round") or "r1",
+            )
+            print(json_mod.dumps(info, indent=2, default=str))
+            return 0
+        if sub == "list":
+            print(json_mod.dumps(ws.list_workspaces(root), indent=2))
+            return 0
+        if sub == "retire":
+            instance = _relay_flag(rest, "instance")
+            if not instance:
+                print("zeo workspace retire requires --instance", file=sys.stderr)
+                return 2
+            print(json_mod.dumps(ws.retire(root, instance), indent=2, default=str))
+            return 0
+    except ws.WorkspaceError as exc:
+        print(f"zeo workspace: {exc}", file=sys.stderr)
+        return 1
+    print(f"zeo workspace: unknown subcommand {sub!r}", file=sys.stderr)
+    return 2
+
+
+def _cmd_mcp_server(argv: list[str]) -> int:
+    from .mcp_server import serve
+
+    return serve()
+
+
+def _cmd_test_runtime(argv: list[str]) -> int:
+    import json as json_mod
+
+    from .runtimes.codex import FakeCodexRuntime, LiveCodexRuntime, SCENARIOS, run_scenario
+
+    if not argv or argv[0] in ("-h", "--help"):
+        print(
+            f"Usage: zeo test-runtime codex --scenario NAME\n  scenarios: {', '.join(SCENARIOS)}",
+            file=sys.stderr,
+        )
+        return 0 if argv and argv[0] in ("-h", "--help") else 2
+    if argv[0] != "codex":
+        print("zeo test-runtime: only 'codex' is supported", file=sys.stderr)
+        return 2
+    rest = argv[1:]
+    scenario = _relay_flag(rest, "scenario") or "master-sparring-relay"
+    root = _discover_root(_relay_flag(rest, "root")) or _discover_root(None) or pathlib.Path(".").resolve()
+    live = os.environ.get("ZEO_CODEX_CANARY") == "1" and "--live" in rest
+    runtime = LiveCodexRuntime() if live else FakeCodexRuntime()
+    result = run_scenario(root, scenario, runtime)
+    print(json_mod.dumps(result, indent=2, default=str))
+    return 0 if result.get("ok") else 1
+
+
 def _git_repo_name(repo: pathlib.Path) -> str:
     proc = subprocess.run(
         ["git", "-C", str(repo), "rev-parse", "--show-toplevel"],
@@ -3004,6 +3322,14 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_execution(args[1:])
     if args and args[0] == "dispatch":
         return _cmd_dispatch(args[1:])
+    if args and args[0] == "relay":
+        return _cmd_relay(args[1:])
+    if args and args[0] == "workspace":
+        return _cmd_workspace(args[1:])
+    if args and args[0] in ("mcp-server", "mcp_server"):
+        return _cmd_mcp_server(args[1:])
+    if args and args[0] == "test-runtime":
+        return _cmd_test_runtime(args[1:])
     backfill_project = None
     locate_stream_name = None
     want_progress = None
@@ -4136,6 +4462,10 @@ _VERB_NAMES = (
     "seat",
     "execution",
     "dispatch",
+    "relay",
+    "workspace",
+    "mcp-server",
+    "test-runtime",
 )
 
 app = typer.Typer(
@@ -4319,6 +4649,30 @@ def _typer_execution(ctx: typer.Context):
 def _typer_dispatch(ctx: typer.Context):
     """zeo dispatch acquire|check-remote|cleanup — exclusive unattended ownership."""
     raise typer.Exit(main(["dispatch", *ctx.args]))
+
+
+@app.command("relay", **_PASSTHROUGH)
+def _typer_relay(ctx: typer.Context):
+    """Seat-instance registry and runtime message ledger."""
+    raise typer.Exit(main(["relay", *ctx.args]))
+
+
+@app.command("workspace", **_PASSTHROUGH)
+def _typer_workspace(ctx: typer.Context):
+    """Git worktree lifecycle bound to relay instances."""
+    raise typer.Exit(main(["workspace", *ctx.args]))
+
+
+@app.command("mcp-server", **_PASSTHROUGH)
+def _typer_mcp_server(ctx: typer.Context):
+    """Stdio MCP server wrapping ZEO library tools."""
+    raise typer.Exit(main(["mcp-server", *ctx.args]))
+
+
+@app.command("test-runtime", **_PASSTHROUGH)
+def _typer_test_runtime(ctx: typer.Context):
+    """Codex compatibility scenarios (fake runtime unless ZEO_CODEX_CANARY=1)."""
+    raise typer.Exit(main(["test-runtime", *ctx.args]))
 
 
 def cli_entry() -> None:

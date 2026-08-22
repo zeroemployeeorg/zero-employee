@@ -33,6 +33,10 @@ address, or whether you are deliberately spawning a new one because none does an
 requires one. A spawned subagent answering on Sparring's behalf is not itself a real consult and
 must never be reported as one.
 
+If `zeo relay resolve --seat sparring --json` shows an active instance, send through
+`zeo relay`. Spawn a new Sparring only when none exists and the task explicitly
+requires creating one.
+
 BEFORE YOU CITE A FILENAME: `ls` the directory and READ THE OUTPUT. 18 ghosts measured, five
 filed by this seat, one AFTER ruling on it (RULING-204).
 

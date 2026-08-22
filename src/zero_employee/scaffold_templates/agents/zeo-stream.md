@@ -16,6 +16,8 @@ seat a full session (RULING-206 s0).
 
 If you were not given a stream id, that gap IS your first report. Do not pick one off the board.
 
+Seat type names are constructors, not addresses. Do not spawn Master or Sparring; use `zeo relay`.
+
 @claude-md/CLAUDE.md
 @roles/BOOT-SUBAGENT.md
 @authoring/sow-authoring-SKILL.md

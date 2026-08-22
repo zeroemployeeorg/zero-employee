@@ -3,6 +3,12 @@
 ## [Unreleased]
 
 ### Added
+- **Seat-instance relay + Codex supervisor.** `zeo relay` registry and message
+  ledger (register/resolve/send/receive/ack); operator-started `zeo relay start`
+  (Model B, not a silent daemon); `zeo workspace`; `zeo mcp-server`;
+  `zeo doctor --codex`; `zeo test-runtime codex` (fake runtime in CI). Custom
+  agent names are constructors, not live addresses. Narrow R1 reopen for this
+  supervisor and git worktree wrappers only.
 - **Execution evidence seam (A1–A6).** Product glossary in `CONTEXT.md`;
   `ExecutorCapabilities` and JSON `ExecutionReceipt` schemas; `zeo execution
   validate|import`; optional Sandcastle adapter (fixtures only, no Node);

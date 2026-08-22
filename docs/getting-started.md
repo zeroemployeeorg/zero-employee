@@ -29,17 +29,19 @@ zeo new             # start intake, SOW, or project
 
 `zeo init` creates:
 
-- `claude-md/CLAUDE.md` — corpus marker / doctrine (Rev 17 scaffold)
+- `governance/GOVERNANCE.md` — tool-neutral doctrine
+- `claude-md/CLAUDE.md` — corpus discovery marker (imports governance; Rev 17)
 - `CLAUDE.md` — IDE entrypoint with `@import "claude-md/CLAUDE.md"`
 - `projects/`, `ruling/`, `intake/`
 - `.gitignore` entries for `STATE.md`, `stream-index.md`, and `.zeo/` (local views/cache — never commit)
 
-Tool bridges are **opt-in** via `--cursor`, `--gemini`, `--claude`, `--agents`, or `--all`:
+Tool bridges are **opt-in** via `--cursor`, `--codex`, `--gemini`, `--claude`, `--agents`, or `--all`:
 
 | Flag | Artifacts |
 | --- | --- |
 | `--cursor` | `.cursor/rules/000-governance.mdc`, `.cursorrules` → `CLAUDE.md` |
-| `--gemini` | `GEMINI.md` → `CLAUDE.md` |
+| `--codex` | `AGENTS.md`, `.codex/config.toml`, `.codex/agents/*.toml`, skills |
+| `--gemini` | compact `GEMINI.md` |
 | `--claude` | `.claude/settings.json` |
 | `--agents` | `.agents/zeo-{architect,claimant,verifier}.md` |
 

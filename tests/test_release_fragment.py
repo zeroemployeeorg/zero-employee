@@ -19,7 +19,8 @@ def _mod():
 
 def test_cli_and_schemas_are_public():
     m = _mod()
-    assert m.is_public("src/zero_employee/cli.py")
+    assert m.is_public("src/zero_employee/relay.py")
+    assert m.is_public("src/zero_employee/runtimes/codex.py")
     assert m.is_public("src/zero_employee/schemas/executor.py")
     assert m.is_public("src/zero_employee/scaffold_templates/agents/zeo-stream.md")
     assert not m.is_public("tests/test_cli.py")

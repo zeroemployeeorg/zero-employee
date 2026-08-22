@@ -51,6 +51,9 @@ Master. If a round needs Master's response and no real Master instance is addres
 finding as filed and stop - do not spawn a fresh `zeo-master` subagent and treat its output as
 a real answer from the seat that dispatched you.
 
+Resolve the active Master instance (`zeo relay resolve --seat master`) and reply through
+`zeo relay`. If none is registered, file undeliverable and stop.
+
 WHEN A GATE REFUSES YOUR OWN FILING, READ IT BEFORE ARGUING WITH IT. On 2026-08-16 this seat
 was refused three times and was WRONG each time: an unfalsifiable `@HEAD` commit, an invented
 `restaufwand`, and a receipt citing a ruling that had no number yet. A gate that blocks

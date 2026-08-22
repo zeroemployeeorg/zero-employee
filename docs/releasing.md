@@ -18,7 +18,8 @@ must land with a file under [`.release/`](../.release/) that declares `kind:` as
 [`CHANGELOG.md`](../CHANGELOG.md) remains the human release note at version bump.
 
 Public paths: `src/zero_employee/cli.py`, `schemas/`, `scaffold_templates/`,
-`hooks.py`, `hooks_templates/`, `execution.py`, `dispatch.py`, `adapters/`,
+`hooks.py`, `hooks_templates/`, `execution.py`, `dispatch.py`, `relay.py`,
+`workspace.py`, `mcp_server.py`, `runtimes/`, `adapters/`,
 and `__init__.py`.
 
 ## Trusted publishing (OIDC — no API tokens in the repo)

@@ -48,42 +48,33 @@ def test_bridges_gemini_claude_agents(tmp_path):
 
 
 def test_bridges_codex_only(tmp_path):
-    """AGENTS.md bridge (developers.openai.com/codex/guides/agents-md, read 2026-08-21):
-    a flat symlink to CLAUDE.md at repo root, same shape as the GEMINI.md bridge --
-    Codex has no directory-of-rules convention analogous to `.cursor/rules/`.
-
-    CODEX-SWAP-UX-SOW-1: `--codex` also installs the `.codex/agents/*.toml`
-    human-in-the-loop persona layer (RULING-351 approach C) alongside the AGENTS.md
-    instructions-parity symlink -- both ship from one flag, no separate opt-in."""
+    """AGENTS.md is a compact Codex-native file (not a Claude symlink)."""
     root = tmp_path / "r"
     root.mkdir()
     (root / "CLAUDE.md").write_text("# x\n", encoding="utf-8")
     info = install_bridges(root, tools=["codex"])
     agents_md = root / "AGENTS.md"
-    assert agents_md.is_symlink()
-    assert agents_md.resolve() == (root / "CLAUDE.md").resolve()
+    assert agents_md.is_file()
+    assert not agents_md.is_symlink()
+    text = agents_md.read_text(encoding="utf-8")
+    assert "constructors" in text.lower() or "seat types" in text.lower()
     assert (root / ".codex" / "agents" / "zeo-master.toml").is_file()
     assert (root / ".codex" / "agents" / "zeo-stream.toml").is_file()
     assert (root / ".codex" / "agents" / "zeo-sparring.toml").is_file()
+    assert (root / ".codex" / "config.toml").is_file()
+    assert (root / ".codex" / "skills" / "zeo-relay" / "SKILL.md").is_file()
     assert "codex" in info["tools"]
 
 
-def test_bridges_codex_personas_are_human_in_the_loop_only():
-    """RULING-351 s8 Amendment 2 / RULING-353: a `.codex/agents/*.toml` persona loads
-    only under an interactive Codex TUI session invoking it by name (approach C) --
-    NOT under `codex exec`/GitHub Action (approach B), which runs a plain prompt and
-    never reads a persona file at all. Each shipped persona must carry that caveat
-    in its own text, not rely on a human remembering it from a ruling nobody re-reads."""
+def test_bridges_codex_personas_are_constructors_not_addresses():
+    """Custom-agent names are seat types (constructors), not live instance addresses."""
     templates_root = (
         pathlib.Path(__file__).resolve().parents[1] / "src" / "zero_employee" / "scaffold_templates" / "codex-agents"
     )
     for stem in ("zeo-master", "zeo-stream", "zeo-sparring"):
         text = (templates_root / f"{stem}.toml").read_text(encoding="utf-8")
-        assert "RULING-351" in text, f"{stem}.toml must cite RULING-351"
-        assert "codex exec" in text, f"{stem}.toml must name the approach-B trigger class it does NOT cover"
-        assert "does NOT load a persona file" in text or "does not load a persona file" in text.lower(), (
-            f"{stem}.toml must carry the approach-B persona-does-not-load caveat"
-        )
+        assert "zeo relay" in text.lower(), f"{stem}.toml must name zeo relay"
+        assert "constructor" in text.lower() or "seat type" in text.lower(), f"{stem}.toml must name constructors"
 
 
 def test_bridges_codex_personas_not_overwritten(tmp_path):

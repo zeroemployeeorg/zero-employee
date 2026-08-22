@@ -1,14 +1,7 @@
-# Project: {project_name}
+# Project Governance Entrypoint
 
 @import "../../claude-md/CLAUDE.md"
 
-## Project Context
+Project: {project_name}
 
-- **Repository:** `{project_name}`
-- **Institutional Knowledge:** `projects/{project_name}/`
-- **Workstreams Directory:** `sow/`
-
-## Governance & Gate Mandates
-
-- All SOWs must comply with `schema_rev: 17`.
-- Primary gate: `make verify` / `zeo` before committing.
+Seat type names are constructors. Use `zeo relay` for live instances.

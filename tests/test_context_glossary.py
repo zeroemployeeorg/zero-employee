@@ -20,6 +20,9 @@ REQUIRED_HEADINGS = (
     "seat type",
     "seat instance",
     "runtime address",
+    "instance registry",
+    "relay message",
+    "supervisor",
     "execution",
     "iteration",
     "session",
@@ -69,4 +72,6 @@ def test_cross_project_distinctions_remain_present():
         assert needle in lower, f"missing distinction {needle!r}"
     assert "agentprovider" in lower.replace(" ", "") or "agent provider" in lower
     assert "not a persistent seat instance" in lower or "not mean master is already" in lower
+    assert "constructor" in lower
+    assert "zeo relay start" in lower
     assert "rulings decide conflicts" in lower

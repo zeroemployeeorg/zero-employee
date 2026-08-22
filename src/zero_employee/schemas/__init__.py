@@ -16,6 +16,7 @@ from .common import (
 from .design import grade_design
 from .execution_receipt import ExecutionReceipt, dump_canonical, load_receipt
 from .executor import ExecutorCapabilities
+from .relay import RelayMessage, SeatInstance
 from .intake import grade_intake, normalize_intake_status
 from .learnings import grade_learnings
 from .ruling import grade_ruling
@@ -25,6 +26,8 @@ __all__ = [
     "DESIGN_STATUS_ENUM",
     "ExecutionReceipt",
     "ExecutorCapabilities",
+    "RelayMessage",
+    "SeatInstance",
     "LIFECYCLES",
     "STATUS_ENUM",
     "STATUS_RESTING",

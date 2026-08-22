@@ -129,7 +129,11 @@ lives in `zeo help --all`, not behind its own `--help`.*
 | `zeo intake "…"` / `new` | Frictionless intent capture (no YAML; status OPEN). |
 | `zeo intake mission` / `propose` / `promote` | Coding-agent protocol: investigate → grounded proposal → SOW. |
 | `zeo sow from-intake FILE` | Lower-level alias for `zeo intake promote`. |
-| `zeo doctor PATH` / `--changed` | Actionable readiness check for one SOW (or git-changed files). |
+| `zeo doctor PATH` / `--changed` / `--codex` | SOW readiness, or Codex capability + relay diagnostics. |
+| `zeo relay …` | Seat-instance registry and runtime message ledger (not `zeo --inbox`). |
+| `zeo workspace create\|list\|retire` | Git worktree per seat instance. |
+| `zeo mcp-server` | Stdio MCP tools wrapping the same library as the CLI. |
+| `zeo test-runtime codex --scenario …` | Codex compatibility canary (fake runtime unless `ZEO_CODEX_CANARY=1`). |
 | `zeo scaffold <project> <stream>` | Greenfield wrapper: project `CLAUDE.md` + `sow new`. |
 | `zeo bridges [flags]` | Install/resync IDE and agent bridges into an existing repository. |
 | `zeo equip <repo> [--force\|--diff]` | Install `.claude/` (settings, trunk-guard hook, agents) + `CLAUDE.md` into a work repo; never clobbers by default. |
@@ -251,29 +255,26 @@ zeo scaffold ducktyper render-pipeline --cursor
 # Add Gemini support:
 zeo scaffold ducktyper render-pipeline --gemini
 
-# Add OpenAI Codex support (AGENTS.md symlink + .codex/agents/*.toml personas):
+# Add OpenAI Codex support (AGENTS.md + .codex/agents + skills + config.toml):
 zeo scaffold ducktyper render-pipeline --codex
 
 # Install the full agent & IDE bridge suite:
 zeo scaffold ducktyper render-pipeline --all
 ```
 
-`--codex` installs two layers:
+`--codex` installs:
 
-- An `AGENTS.md` symlink pointing at `CLAUDE.md` (a plain text fallback file if the
-  filesystem can't symlink) — Codex CLI's real discovery convention is a flat
-  `AGENTS.md` at the project root, walked from the Git root down to `cwd`, with no
-  directory-of-rules convention the way Cursor's `.cursor/rules/` has. Same
-  thin-bridge shape as the `GEMINI.md` bridge, not a content fork.
-- `.codex/agents/{zeo-master,zeo-stream,zeo-sparring}.toml` — Codex-native
-  human-in-the-loop persona equivalents of the `.claude/agents/*.md` seats,
-  generalized from the real, behaviorally-verified `zeo-stream.toml` persona this
-  org shipped (RULING-351, RULING-353). **These personas load only under an
-  interactive Codex TUI session where a human explicitly invokes one by name** —
-  they do *not* load under `codex exec`/GitHub Action (non-interactive) dispatch,
-  which runs a plain prompt and never reads a persona file at all (RULING-351 §8
-  Amendment 2). Each shipped file carries this caveat in its own text. Never
-  clobbers an existing file of the same name, same as the `--agents` bridge.
+- A compact Codex-native `AGENTS.md` (not a Claude symlink): first command, relay
+  vs spawn, constructors-not-addresses, pointer to `governance/GOVERNANCE.md`.
+- `.codex/config.toml` (agents enabled, `mcp_servers.zeo` → `zeo mcp-server`).
+- `.codex/agents/{zeo-master,zeo-stream,zeo-sparring}.toml` — short personas.
+  A custom persona is loaded only when Codex actually spawns that custom-agent
+  thread. Starting a top-level `codex exec` run does not itself become the named
+  persona. Probe the installed binary with `zeo doctor --codex`.
+- `.codex/skills/` (and `.claude/skills/`) workflow packages.
+
+Preferred dual-seat UX: `zeo relay start --master zeo-master --sparring zeo-sparring`.
+Never clobbers an existing file of the same name.
 
 Supported bridge flags: `--cursor`, `--codex`, `--gemini`, `--claude`, `--agents`, `--all`.
 

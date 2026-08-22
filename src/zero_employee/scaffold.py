@@ -29,6 +29,16 @@ _ZEO_AGENTS = ("zeo-master.md", "zeo-stream.md", "zeo-sparring.md")
 # differ enough that a shared directory would blur `_read_template`'s lookup, not
 # clarify it.
 _ZEO_AGENTS_CODEX = ("zeo-master", "zeo-stream", "zeo-sparring")
+_ZEO_SKILLS = (
+    "zeo-orient",
+    "zeo-stream-work",
+    "zeo-ruling-authoring",
+    "zeo-sparring-review",
+    "zeo-merge-ritual",
+    "zeo-relay",
+    "zeo-cold-start",
+    "zeo-intake-promote",
+)
 
 # REPO-EQUIP-SOW-5 (`zeo equip`) ALWAYS tier: (dest-relative-path, template-parts, executable?).
 # Matches SOW-1 s1's table exactly. Sourcing of the agent defs is documented in
@@ -267,25 +277,15 @@ def install_bridges(root: pathlib.Path | str, tools: Iterable[str] | None = None
         actions.append({"path": ".cursorrules", "action": act})
 
     if "codex" in tools_set:
-        # Codex CLI discovery (developers.openai.com/codex/guides/agents-md, read
-        # 2026-08-21): a flat AGENTS.md at the project root (Codex walks the Git
-        # root down to cwd, concatenating AGENTS.md/AGENTS.override.md per
-        # directory level) -- no frontmatter, no directory-of-rules convention
-        # the way Cursor's `.cursor/rules/` is. Same shape as the GEMINI.md
-        # bridge: a single symlink deferring to CLAUDE.md, not a content fork.
+        # Compact Codex-native AGENTS.md (not a Claude symlink). Names are constructors.
         agents_md = root / "AGENTS.md"
-        act = _symlink_or_fallback(agents_md, "CLAUDE.md", "See CLAUDE.md\n")
+        act = _write_if_absent(agents_md, _read_template("AGENTS.md"))
         actions.append({"path": "AGENTS.md", "action": act})
 
-        # CODEX-SWAP-UX-SOW-1 (RULING-351 approach C, S8 Amendment 2): the
-        # `.codex/agents/*.toml` human-in-the-loop persona layer, generalized from
-        # the one real, behaviorally-verified persona this org has ever shipped
-        # (org/.codex/agents/zeo-stream.toml, RULING-353). These personas load ONLY
-        # under an interactive Codex TUI session where a human explicitly invokes
-        # one by name -- NOT under `codex exec`/GitHub Action (approach B), which
-        # runs a plain prompt and never reads a persona file at all. Mirrors the
-        # `.claude/agents/{name}.md` install-triple pattern immediately below
-        # (`agents` tool), same never-clobber write, different destination/format.
+        config = root / ".codex" / "config.toml"
+        act = _write_if_absent(config, _read_template("codex-config.toml"))
+        actions.append({"path": ".codex/config.toml", "action": act})
+
         codex_agents_dir = root / ".codex" / "agents"
         codex_agents_dir.mkdir(parents=True, exist_ok=True)
         for stem in _ZEO_AGENTS_CODEX:
@@ -293,9 +293,21 @@ def install_bridges(root: pathlib.Path | str, tools: Iterable[str] | None = None
             act = _write_if_absent(dest, _read_template("codex-agents", f"{stem}.toml"))
             actions.append({"path": f".codex/agents/{stem}.toml", "action": act})
 
+        skills_dest = root / ".codex" / "skills"
+        claude_skills = root / ".claude" / "skills"
+        for name in _ZEO_SKILLS:
+            body = _read_template("skills", name, "SKILL.md")
+            for base, rel in (
+                (skills_dest, f".codex/skills/{name}/SKILL.md"),
+                (claude_skills, f".claude/skills/{name}/SKILL.md"),
+            ):
+                dest = base / name / "SKILL.md"
+                act = _write_if_absent(dest, body)
+                actions.append({"path": rel, "action": act})
+
     if "gemini" in tools_set:
         gemini = root / "GEMINI.md"
-        act = _symlink_or_fallback(gemini, "CLAUDE.md", "See CLAUDE.md\n")
+        act = _write_if_absent(gemini, _read_template("GEMINI.md"))
         actions.append({"path": "GEMINI.md", "action": act})
 
     if "claude" in tools_set:
@@ -405,7 +417,7 @@ def init_corpus(root: pathlib.Path | str, tools: Iterable[str] | None = None) ->
     root.mkdir(parents=True, exist_ok=True)
     created: list[str] = []
 
-    for d in ("claude-md", "projects", "ruling", "intake"):
+    for d in ("claude-md", "governance", "projects", "ruling", "intake"):
         p = root / d
         if not p.exists():
             p.mkdir(parents=True, exist_ok=True)
@@ -423,6 +435,11 @@ def init_corpus(root: pathlib.Path | str, tools: Iterable[str] | None = None) ->
             encoding="utf-8",
         )
         created.append("intake/README.md")
+
+    gov = root / "governance" / "GOVERNANCE.md"
+    if not gov.exists():
+        gov.write_text(_read_template("governance", "GOVERNANCE.md"), encoding="utf-8")
+        created.append("governance/GOVERNANCE.md")
 
     canon = root / "claude-md" / "CLAUDE.md"
     if not canon.exists():

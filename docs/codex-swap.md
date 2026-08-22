@@ -17,36 +17,40 @@ to actually run the swap.
 
 ## The short version
 
-There is **no mode where Codex silently stays resident and dispatches work on
-its own initiative**, the way a Claude Code Master session does today.
-RULING-351 rejected a literal daemon port on the merits: Codex documents
-proactive/unattended delegation as Ultra-tier only, and even there it's
-scoped to an already-active conversation, not a standing background process.
-RULING-353 independently re-verified that a separate `codex app-server
-daemon` surface found later in the live CLI's own `--help` (not in Codex's
-public web docs) doesn't change this either — it's connection/transport
-multiplexing (the practical shape of `tmux attach` for Codex sessions, letting
-multiple clients share one already-started session), not an autonomous
-dispatcher. It cannot originate work on its own; `codex queue` against a
-thread that doesn't already exist fails outright.
+Custom-agent names (`zeo-master`, `zeo-sparring`, `zeo-stream`) are **seat
+types** (constructors). They are not addresses of already-running instances.
+Master ↔ Sparring communication uses `zeo relay` plus an operator-started
+supervisor (`zeo relay start`). That process is **not** a silent daemon:
+when the human stops it, delivery stops (RULING-351 preserved).
 
-Instead, doctrine adopts **two approaches for two different real triggers**,
-not as competing alternatives:
+A custom persona is loaded only when Codex actually spawns a custom-agent
+thread. Starting a top-level `codex exec` run does not itself turn that
+top-level thread into the named persona. Probe the **installed** binary with
+`zeo doctor --codex` rather than freezing doctrine around one older CLI
+experiment.
 
-- **Approach B** — `codex exec`, scriptable/unattended (scheduled or
-  CI-triggered dispatch).
-- **Approach C** — the interactive `codex` TUI, a human explicitly invoking a
-  persona by name (the operator-initiated "swap now" scenario).
+Preferred dual-seat UX:
+
+```bash
+zeo relay start --master zeo-master --sparring zeo-sparring
+```
+
+Keep both inboxes: relay messages coordinate live instances; `zeo --inbox`
+and SOWs/rulings remain organizational truth.
+
+RULING-351 still rejects a literal Codex daemon port. Approach B (`codex
+exec`) and approach C (interactive TUI) remain valid trigger classes for
+*starting* work; they do not replace the relay addressing layer.
 
 ## Trigger-class table
 
 | | Approach B — `codex exec` | Approach C — interactive `codex` TUI |
 |---|---|---|
-| **Invocation** | Scripted/CI: `codex exec "<prompt>" ...` | A human runs `codex` with no subcommand, then invokes a persona (e.g. `zeo-stream`) by name inside the session |
-| **When to use** | Scheduled/CI upkeep — a periodic triage sweep, nobody available to manually kick off a session | The operator says "swap to Codex now" and starts a session by hand |
-| **Persona (`.codex/agents/*.toml`) loads?** | **No.** RULING-351 §8 Amendment 2 (Sparring): neither `codex exec` nor the GitHub Action path documents selecting a persona file — a B-invocation runs a plain prompt. Seat discipline (write-set fences, escalation rules, FIRST ACT verb) must ride in the prompt text and/or `AGENTS.md`, not in a TOML file that never loads. | Yes — this is the trigger class `.codex/agents/*.toml` personas are documented for. |
-| **Behaviorally verified in this org?** | Yes — see below. | **Partially.** Persona *content loading* has been verified only via `codex exec` as a proxy (see gap note below) — the actual documented trigger class (a human at a live interactive TUI) is still genuinely untested as of 2026-08-21. |
-| **Unattended/self-triaging like Master today?** | No — escalations get seen at the next triggered run, not within seconds. | No — standard-tier Codex doesn't do unprompted proactive delegation; the session needs more frequent human nudges to keep triaging once running (RULING-351 §2). |
+| **Invocation** | Scripted/CI: `codex exec "<prompt>" ...` | A human runs `codex`, then may spawn a named custom agent |
+| **When to use** | Scheduled/CI upkeep | Operator-initiated swap |
+| **Persona loads?** | Only if this Codex release actually spawns a custom-agent thread for that name. A bare `codex exec` prompt is not automatically `zeo-stream`. Confirm with `zeo doctor --codex` / `zeo test-runtime codex`. | Same rule: the persona file applies to the spawned custom-agent thread, not to “the TUI exists”. |
+| **Master ↔ Sparring** | Use `zeo relay`; do not spawn-by-name if `zeo relay resolve` shows an active instance. | Same. Prefer `zeo relay start`. |
+| **Unattended daemon?** | No. | No. |
 
 ## Exact commands, verified
 

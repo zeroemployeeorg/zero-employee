@@ -333,6 +333,28 @@ def run_pre_commit(corpus_root: pathlib.Path | str | None = None) -> int:
     _regen_local_boards(root)
 
     staged = _staged_sow_ruling_files(root)
+    if os.environ.get("ZEO_INSTANCE_ID") or os.environ.get("ZEO_SEAT"):
+        from .workspace import commit_message_has_required_trailers, sparring_may_stage
+
+        all_staged = subprocess.run(
+            ["git", "-C", str(root), "diff", "--cached", "--name-only"],
+            capture_output=True,
+            text=True,
+        ).stdout.splitlines()
+        if not sparring_may_stage(all_staged):
+            print(
+                "COMMIT BLOCKED: Sparring instance may only stage ruling/ or executions/relay/ paths.",
+                file=sys.stderr,
+            )
+            return 1
+        msg_file = root / ".git" / "COMMIT_EDITMSG"
+        if msg_file.is_file() and not commit_message_has_required_trailers(msg_file.read_text(encoding="utf-8")):
+            print(
+                "COMMIT BLOCKED: ZEO_SEAT/ZEO_INSTANCE_ID/ZEO_CONVERSATION require matching commit trailers.",
+                file=sys.stderr,
+            )
+            return 1
+
     if not staged:
         return 0
 
@@ -629,6 +651,18 @@ def run_pretooluse_git(stdin_text: str | None = None) -> int:
     # (a `git push` has nothing new staged and no pending commit message to
     # check citation against).
     if "git commit" in command:
+        from .workspace import commit_message_has_required_trailers, sparring_may_stage
+
+        if not sparring_may_stage(staged):
+            print("BLOCKED: Sparring may only stage ruling-shaped paths.", file=sys.stderr)
+            return 1
+        message = _extract_commit_message(command)
+        if not commit_message_has_required_trailers(message or ""):
+            print(
+                "BLOCKED: set ZEO-Seat / ZEO-Instance / ZEO-Conversation trailers to match the env.",
+                file=sys.stderr,
+            )
+            return 1
         gov_hits = _governance_paths_touched(staged)
         if gov_hits:
             message = _extract_commit_message(command)

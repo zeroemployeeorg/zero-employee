@@ -37,6 +37,7 @@ DEFAULT_RULES = [
     "Never author governance YAML manually.",
     "Use zeo intake promote for grounded intake-to-SOW conversion.",
     "Use zeo doctor before considering governed work ready.",
+    "Seat type names are constructors; send through zeo relay when an instance is registered.",
 ]
 
 DEFAULT_ENTRYPOINTS = {
