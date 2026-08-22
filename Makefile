@@ -96,13 +96,16 @@ check-env: ## Verify virtual environment is active and zero_employee is importab
 verify: ## The doctrine gate: format-check + lint + tests
 	@echo "${BLUE}Running zeo doctrine gate...${RESET}"
 	@echo ""
-	@echo "${BLUE}[1/3] format-check${RESET}"
+	@echo "${BLUE}[1/4] format-check${RESET}"
 	@$(MAKE) --no-print-directory format-check
 	@echo ""
-	@echo "${BLUE}[2/3] lint${RESET}"
+	@echo "${BLUE}[2/4] lint${RESET}"
 	@$(MAKE) --no-print-directory lint
 	@echo ""
-	@echo "${BLUE}[3/3] test${RESET}"
+	@echo "${BLUE}[3/4] release-fragment${RESET}"
+	@$(UV) run python scripts/check_release_fragment.py
+	@echo ""
+	@echo "${BLUE}[4/4] test${RESET}"
 	@$(MAKE) --no-print-directory test
 	@echo ""
 	@echo "${GREEN}=== make verify GREEN ===${RESET}"

@@ -14,7 +14,7 @@ state boards, and IDE/agent bridge synchronization — enforced by a linter, not
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 [![Typed](https://img.shields.io/badge/typing-typed-blue.svg)](https://peps.python.org/pep-0561/)
 
-[Website](https://zeroemployee.org) • [Documentation](https://zeroemployee.org/docs) • [Tutorial](docs/tutorial.md) • [Issues](https://github.com/zeroemployeeorg/zero-employee/issues)
+[Website](https://zeroemployee.org) • [Documentation](https://zeroemployee.org/docs) • [Tutorial](docs/tutorial.md) • [Vocabulary](CONTEXT.md) • [Issues](https://github.com/zeroemployeeorg/zero-employee/issues)
 
 </div>
 
@@ -347,6 +347,8 @@ make verify
 
 ## Documentation & resources
 
+* [Product vocabulary](CONTEXT.md) — Canonical terms (corpus, seat, session, receipt, delivery). Explanatory only; rulings still decide conflicts.
+* [Non-goals](docs/non-goals/README.md) — Rejected product growth (R1–R7) with reopen evidence.
 * [Tutorial](docs/tutorial.md) — A real, verified walkthrough: idea → grounded proposal → SOW → a design fork ruled and delivered → `--priority`. Start here if you want to see *why*, not just *what*.
 * [Getting Started Guide](docs/getting-started.md) — Step-by-step onboarding for new corpora.
 * [Release Process](docs/releasing.md) — Versioning, changelogs, and PyPI publishing.

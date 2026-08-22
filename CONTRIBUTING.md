@@ -79,9 +79,9 @@ uv run python -m pytest tests/test_x.py -v   # one file, verbose
 
 - [ ] `make verify` passes locally.
 - [ ] New behavior has a test; bug fixes have a regression test.
-- [ ] For a user-facing change, note it in your PR description so the maintainer can
-      fold it into the next `CHANGELOG.md` entry at release time — see
-      [`docs/releasing.md`](docs/releasing.md) for the format existing entries follow.
+- [ ] For a user-facing change, add a `.release/` fragment (`kind: patch|minor|breaking|no-user-change`)
+      and note it in the PR so the maintainer can fold it into `CHANGELOG.md` at release time — see
+      [`docs/releasing.md`](docs/releasing.md).
 - [ ] No secrets, tokens, or credentials in the diff.
 - [ ] Docs (`README.md`, `docs/`) updated if you changed a command's behavior or added
       a new one.
